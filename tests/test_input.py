@@ -3,6 +3,13 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import sys
+import numpy as np
+import tensorflow as tf
+sys.path.append('../infogan/')
+#from misc.datasets_embedding import FlowerDataset
+
+
 import numpy as np
 import pickle
 import random
@@ -83,8 +90,7 @@ class FlowerDataset(Dataset):
 
     def get_data(self, flip_flag=True):
         with open(self._pickle_path, 'rb') as f:
-            height, width, depth, embedding_num, \
-                images, embeddings, labels = pickle.load(f)
+            _, _, _, _, images, embeddings, labels = pickle.load(f)
             self._images = np.array([image for image in images])
             self._labels = np.array([label for label in labels])
             self._embeddings = np.array([
@@ -94,7 +100,25 @@ class FlowerDataset(Dataset):
             # shuffle on first run
             self._index_in_epoch = self._num_examples
             self._flip_flag = flip_flag
-            self.train = self
-            self.image_dim = height * width * depth
-            self.image_shape = (height, width, depth)
-            self.embedding_num = embedding_num
+
+
+
+
+aaa = np.array([i for i in [1,2,3]])
+file_name = '/home/han/Documents/CVPR2017/data/flowers/flowers64.pickle'
+
+
+f_Dataset = FlowerDataset(file_name)
+f_Dataset.get_data()
+
+
+print(f_Dataset._num_examples)
+images = f_Dataset._images
+labels = f_Dataset._labels
+embeddings = f_Dataset._embeddings
+
+
+for i in range(2):
+    a,b,c = f_Dataset.next_batch(3)
+
+print('sss')

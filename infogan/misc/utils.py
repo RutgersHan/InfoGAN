@@ -70,11 +70,16 @@ def center_crop(x, crop_h, crop_w=None, resize_w=64):
 
 def transform(image, npx=64, is_crop=True, resize_w=64):
     # npx : # of pixels width/height of image
-    cropped_image = center_crop(image, npx, resize_w=resize_w)
+    if is_crop:
+        cropped_image = center_crop(image, npx, resize_w=resize_w)
+    else:
+        cropped_image = scipy.misc.imresize(image, [resize_w, resize_w])
     return np.array(cropped_image)/127.5 - 1.
 
 def inverse_transform(images):
-    return (images+1.)/2.
+    return (images+1.)/2. # change the range to [0,1]
+
+
 
 
 def to_json(output_path, *layers):
