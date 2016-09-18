@@ -250,7 +250,7 @@ class Gaussian(Distribution):
 class Uniform(Gaussian):
     """
     This distribution will sample prior data from a uniform distribution, but
-    the prior and posterior are still modeled as a Gaussian
+    the likelihood and posterior are still modeled as a Gaussian
     """
 
     def kl_prior(self):
@@ -260,11 +260,20 @@ class Uniform(Gaussian):
     #     raise NotImplementedError
 
     # def logli_prior(self, x_var):
-    #     # 
+    #     #
     #     raise NotImplementedError
 
     def sample_prior(self, batch_size):
         return tf.random_uniform([batch_size, self.dim], minval=-1., maxval=1.)
+
+
+class LatentGaussian(Gaussian):
+    """
+    This distribution will "calculate prior" data from a user embedding, but
+    the prior and posterior are still modeled as a Gaussian
+    """
+    def sample_prior(self, prior):
+        return prior
 
 
 class Bernoulli(Distribution):
@@ -306,6 +315,7 @@ class Bernoulli(Distribution):
 
     def prior_dist_info(self, batch_size):
         return dict(p=0.5 * tf.ones([batch_size, self.dim]))
+
 
 class MeanBernoulli(Bernoulli):
     """
@@ -426,7 +436,7 @@ class Product(Distribution):
         ret = dict()
         for idx, dist_flat_i, dist_i in zip(itertools.count(), self.split_dist_flat(dist_flat), self.dists):
             dist_info_i = dist_i.activate_dist(dist_flat_i)
-            for k, v in dist_info_i.iteritems():
+            for k, v in dist_info_i.iteritems():  # dist_info_i can be mean, std for gausian, prob for category
                 ret["id_%d_%s" % (idx, k)] = v
         return ret
 

@@ -50,6 +50,14 @@ class Dataset(object):
                     transformed_images[i] = images[i]
         return transformed_images
 
+    def sample_embeddings(self, embeddings):
+        if embeddings.shape[1] == 1:
+            return np.squeeze(embeddings)
+        else:
+            batch_size, embedding_num, _ = embeddings.shape
+            randix = np.random.randint(embedding_num, size=batch_size)
+            return np.squeeze(embeddings[np.arange(batch_size), randix, :])
+
     def next_batch(self, batch_size):
         """Return the next `batch_size` examples from this data set."""
         start = self._index_in_epoch
@@ -70,14 +78,16 @@ class Dataset(object):
             assert batch_size <= self._num_examples
         end = self._index_in_epoch
         transformed_images = self.transform(self._images[start:end])
+        sampled_embeddings = self.sample_embeddings(
+            self._embeddings[start:end])
         if self._labels is None:
-            return transformed_images, self._embeddings[start:end], None
+            return transformed_images, sampled_embeddings, None
         else:
-            return (transformed_images, self._embeddings[start:end],
+            return (transformed_images, sampled_embeddings,
                     self._labels[start:end])
 
 
-class FlowerDataset(Dataset):
+class FlowerDataset(object):
     def __init__(self, pickle_path):
         self._pickle_path = pickle_path
 
@@ -85,16 +95,12 @@ class FlowerDataset(Dataset):
         with open(self._pickle_path, 'rb') as f:
             height, width, depth, embedding_num, \
                 images, embeddings, labels = pickle.load(f)
-            self._images = np.array([image for image in images])
-            self._labels = np.array([label for label in labels])
-            self._embeddings = np.array([
+            array_images = np.array([image for image in images])
+            array_labels = np.array([label for label in labels])
+            array_embeddings = np.array([
                 embedding for embedding in embeddings])
-            self._epochs_completed = -1
-            self._num_examples = len(images)
-            # shuffle on first run
-            self._index_in_epoch = self._num_examples
-            self._flip_flag = flip_flag
-            self.train = self
+
             self.image_dim = height * width * depth
-            self.image_shape = (height, width, depth)
-            self.embedding_num = embedding_num
+            self.image_shape = [height, width, depth]
+            self.embedding_shape = [array_embeddings.shape[-1]]
+            self.train = Dataset(array_images, array_embeddings, array_labels)
