@@ -67,6 +67,43 @@ def convert_flowers_dataset_pickle(data_dir, train_ratio=0.75):
                      embeddings, labels], f_out)
 
 
+def convert_flowers_test_dataset_pickle(data_dir, train_ratio=0.75):
+    h = h5py.File(os.path.join(data_dir, 'flower_tv.hdf5'))
+    outfile = os.path.join(data_dir, 'flowers' + str(IMSIZE) + 'test'
+                                               + '.pickle')
+    flower_captions = {}
+    for ds in h.iteritems():
+        flower_captions[ds[0]] = np.array(ds[1])
+        image_list = [key for key in flower_captions]
+    image_list.sort()
+    training_num = int(len(image_list) * train_ratio)
+    test_image_list = image_list[training_num:]
+    height = IMSIZE
+    width = IMSIZE
+    depth = 3
+    embedding_num = 5
+    images = []
+    embeddings = []
+    labels = []
+    for i, f in enumerate(test_image_list):
+        f_name = os.path.join(data_dir, 'jpg', f)
+        image = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
+        image = colorize(image)
+        assert image.shape == (IMSIZE, IMSIZE, 3)
+        image += 1.
+        image *= (255. / 2.)
+        image = image.astype('uint8')
+        embedding = flower_captions[f]
+        label = 0  # temporary
+        print('%d\t%d' % (i, label))
+        images.append(image)
+        embeddings.append(embedding)
+        labels.append(label)
+    with open(outfile, 'wb') as f_out:
+        pickle.dump([height, width, depth, embedding_num, images,
+                     embeddings, labels], f_out)
+
+
 def convert_flowers_dataset_tf(data_dir, train_ratio=0.75):
     h = h5py.File(os.path.join(data_dir, 'flower_tv.hdf5'))
     outfile = os.path.join(data_dir, 'flowers' + str(IMSIZE)
@@ -106,5 +143,6 @@ def convert_flowers_dataset_tf(data_dir, train_ratio=0.75):
     writer.close()
 
 if __name__ == '__main__':
-    convert_flowers_dataset_pickle(FLOWER_DIR)
+    # convert_flowers_dataset_pickle(FLOWER_DIR)
     # convert_flowers_dataset_tf(FLOWER_DIR)
+    convert_flowers_test_dataset_pickle(FLOWER_DIR)

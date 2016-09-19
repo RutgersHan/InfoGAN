@@ -31,11 +31,9 @@ def main():
                         help='Trained Model Path')
     parser.add_argument('--n_images', type=int, default=5,
                         help='Number of Images per Caption')
-    parser.add_argument('--caption_thought_vectors', type=str, default='Data/sample_caption_vectors.hdf5',
-                        help='Caption Thought Vector File')
     args = parser.parse_args()
 
-    batch_size = 128
+    # batch_size = 128
     embedding_dim = 100
 
     latent_spec = [
@@ -46,7 +44,7 @@ def main():
         (LatentGaussian(embedding_dim), True)
     ]
 
-    file_name = '/home/han/Documents/CVPR2017/data/flowers/flowers64.pickle'
+    file_name = '/home/han/Documents/CVPR2017/data/flowers/flowers64test.pickle'
     dataset = FlowerDataset(file_name)
     dataset.get_data()
 
@@ -66,14 +64,12 @@ def main():
     saver = tf.train.Saver()
     saver.restore(sess, args.model_path)
 
-    h = h5py.File(args.caption_thought_vectors)
-    caption_vectors = np.array(h['vectors'])
     caption_image_dic = {}
 
-    for cn, caption_vector in enumerate(caption_vectors):
-        embeddings = [caption_vector] * args.n_images  # TODO: need to test
-        array_embeddings = np.array([
-            embedding for embedding in embeddings])
+    # for cn, caption_vector in enumerate(caption_vectors):
+    for cn in range(20):
+        _, embeddings, _ = dataset.train.next_batch(1)
+        array_embeddings = np.tile(embeddings, (args.n_images, 1))
         [gen_image] = sess.run([generated_images],
                                feed_dict={con_embedding: array_embeddings})
         caption_images = []
@@ -85,7 +81,7 @@ def main():
         if os.path.isfile(f):
             os.unlink(join(args.data_dir, 'val_samples/' + f))
 
-    for cn in range(0, len(caption_vectors)):
+    for cn in range(20):
         caption_images = []
         for i, im in enumerate(caption_image_dic[cn]):
             caption_images.append(im)

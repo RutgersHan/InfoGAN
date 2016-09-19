@@ -20,8 +20,8 @@ if __name__ == "__main__":
     root_log_dir = "logs/flower"
     root_checkpoint_dir = "ckt/flower"
     batch_size = 128
-    updates_per_epoch = 100
-    max_epoch = 50
+    updates_per_epoch = 50
+    max_epoch = 500
     embedding_dim = 100
 
     exp_name = "flower_%s" % timestamp

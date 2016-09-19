@@ -24,7 +24,7 @@ class ConInfoGANTrainer(object):
                  checkpoint_dir="ckt",
                  max_epoch=100,
                  updates_per_epoch=100,
-                 snapshot_interval=10000,
+                 snapshot_interval=5000,
                  info_reg_coeff=1.0,
                  con_info_reg_coeff=1.0,
                  discriminator_learning_rate=2e-4,
