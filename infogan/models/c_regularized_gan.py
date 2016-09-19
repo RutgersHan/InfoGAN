@@ -89,10 +89,11 @@ class ConRegularizedGAN(object):
              custom_fully_connected(self.reg_latent_dist.dist_flat_dim))
         context_encoder_template = \
             (shared_template.
-             custom_fully_connected(self.ef_dim * 2).
+             custom_fully_connected(self.con_latent_dist.dist_flat_dim * 2).
              fc_batch_norm().
              apply(leaky_rectify).
-             custom_fully_connected(self.ef_dim))
+             # self.con_latent_dist.dist_flat_dim = 2 * ef_dim for gaussian
+             custom_fully_connected(self.con_latent_dist.dist_flat_dim))
         return (discriminator_template, encoder_template,
                 context_encoder_template)
 
@@ -143,10 +144,20 @@ class ConRegularizedGAN(object):
                 reg_dist_flat, self.con_latent_dist.sample(con_dist_info),
                 con_dist_info, con_dist_flat)
 
-
     def generate(self, z_var):
         x_dist = self.generator_template.construct(input=z_var)
         return tf.nn.tanh(x_dist)
+
+    def generate_for_visualization(self, image_num, embedding_shape):
+        embeddings = tf.placeholder(
+            tf.float32, [-1] + embedding_shape,
+            name='conditional_embeddings'
+        )
+        z_var = self.latent_dist.sample_prior(image_num)
+        c_var = self.generate_condition(embeddings)
+        z_c_var = tf.concat(1, [z_var, c_var])
+        generated_images = self.generate(z_c_var)
+        return embeddings, generated_images
 
     def generate_condition(self, c_var):
         c_dist = self.context_template.construct(input=c_var)

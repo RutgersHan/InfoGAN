@@ -22,7 +22,7 @@ if __name__ == "__main__":
     batch_size = 128
     updates_per_epoch = 100
     max_epoch = 50
-    embedding_dim = 128
+    embedding_dim = 100
 
     exp_name = "flower_%s" % timestamp
 

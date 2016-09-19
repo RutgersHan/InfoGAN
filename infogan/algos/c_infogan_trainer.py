@@ -172,8 +172,9 @@ class ConInfoGANTrainer(object):
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
-                print("Will add visualize back later")
                 # self.visualize_all_factors()  #TODO: Will add back later
+                print("success")
+
 
 # TODO: need to change the visualize function
     def visualize_all_factors(self):
@@ -252,6 +253,7 @@ class ConInfoGANTrainer(object):
             imgs = tf.concat(0, stacked_img)
             imgs = tf.expand_dims(imgs, 0)
             tf.image_summary("image_%d_%s" % (dist_idx, dist.__class__.__name__), imgs)
+
 
     def train(self):
 
