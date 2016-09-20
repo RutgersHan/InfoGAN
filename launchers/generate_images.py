@@ -62,19 +62,23 @@ flower_2016_09_19_16_11_03/flower_2016_09_19_16_11_03_5000.ckpt""".replace('\n',
     saver.restore(sess, args.model_path)
 
     caption_image_dic = {}
+    real_image_dic = {}
     mkdir_p(join(args.data_dir, 'val_samples'))
 
     # for cn, caption_vector in enumerate(caption_vectors):
     for cn in range(20):
-        _, embeddings, _ = dataset.train.next_batch(1)
+        real_images, embeddings, _ = dataset.train.next_batch(1)
         array_embeddings = np.tile(embeddings, (args.n_images, 1))
         [gen_image] = sess.run([generated_images],
                                feed_dict={con_embedding: array_embeddings})
         gen_image = (gen_image + 1.0) * 255.0 / 2
+        real_images = (real_images + 1.0) * 255.0 / 2
+        real_images = np.squeeze(real_images).astype('uint8')
         gen_image = gen_image.astype('uint8')
         caption_images = []
         caption_images = [gen_image[i, :, :, :] for i in range(0, args.n_images)]
         caption_image_dic[cn] = caption_images
+        real_image_dic[cn] = real_images
         print("Generating %d image" % cn)
 
     for f in os.listdir(join(args.data_dir, 'val_samples')):
@@ -88,6 +92,8 @@ flower_2016_09_19_16_11_03/flower_2016_09_19_16_11_03_5000.ckpt""".replace('\n',
             caption_images.append(np.zeros((64, 5, 3)))
         combined_image = np.concatenate(caption_images[0:-1], axis=1)
         scipy.misc.imsave(join(args.data_dir, 'val_samples/combined_image_{}.jpg'.format(cn)), combined_image)
+        scipy.misc.imsave(join(args.data_dir, 'val_samples/real_image_{}.jpg'.format(cn)), real_image_dic[cn])
+
 
 
 if __name__ == '__main__':
