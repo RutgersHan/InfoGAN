@@ -4,4 +4,5 @@ MNIST
 imgs
 logs
 ckt
+val_samples
 .ipynb_checkpoints
