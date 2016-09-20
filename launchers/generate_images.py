@@ -13,21 +13,18 @@ from infogan.misc.utils import mkdir_p
 from infogan.misc.datasets_embedding import FlowerDataset
 
 import argparse
-import pickle
 from os.path import join
-import h5py
-from Utils import image_processing
 import scipy.misc
-import random
-import json
 import os
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default="Data",
+    parser.add_argument('--data_dir', type=str, default="/home/han/Documents/CVPR2017/InfoGAN/",
                         help='Data Directory')
-    parser.add_argument('--model_path', type=str, default='Data/Models/latest_model_flowers_temp.ckpt',
+    parser.add_argument('--model_path', type=str, default="""
+/home/han/Documents/CVPR2017/InfoGAN/ckt/flower/
+flower_2016_09_19_16_11_03/flower_2016_09_19_16_11_03_5000.ckpt""".replace('\n', ''),
                         help='Trained Model Path')
     parser.add_argument('--n_images', type=int, default=5,
                         help='Number of Images per Caption')
@@ -65,6 +62,7 @@ def main():
     saver.restore(sess, args.model_path)
 
     caption_image_dic = {}
+    mkdir_p(join(args.data_dir, 'val_samples'))
 
     # for cn, caption_vector in enumerate(caption_vectors):
     for cn in range(20):
@@ -72,6 +70,8 @@ def main():
         array_embeddings = np.tile(embeddings, (args.n_images, 1))
         [gen_image] = sess.run([generated_images],
                                feed_dict={con_embedding: array_embeddings})
+        gen_image = (gen_image + 1.0) * 255.0 / 2
+        gen_image = gen_image.astype('uint8')
         caption_images = []
         caption_images = [gen_image[i, :, :, :] for i in range(0, args.n_images)]
         caption_image_dic[cn] = caption_images
@@ -87,7 +87,7 @@ def main():
             caption_images.append(im)
             caption_images.append(np.zeros((64, 5, 3)))
         combined_image = np.concatenate(caption_images[0:-1], axis=1)
-    scipy.misc.imsave(join(args.data_dir, 'val_samples/combined_image_{}.jpg'.format(cn)), combined_image)
+        scipy.misc.imsave(join(args.data_dir, 'val_samples/combined_image_{}.jpg'.format(cn)), combined_image)
 
 
 if __name__ == '__main__':

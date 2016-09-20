@@ -150,7 +150,7 @@ class ConRegularizedGAN(object):
 
     def generate_for_visualization(self, image_num, embedding_shape):
         embeddings = tf.placeholder(
-            tf.float32, [-1] + embedding_shape,
+            tf.float32, [None] + embedding_shape,
             name='conditional_embeddings'
         )
         z_var = self.latent_dist.sample_prior(image_num)
