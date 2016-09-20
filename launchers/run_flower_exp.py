@@ -21,7 +21,7 @@ if __name__ == "__main__":
     root_checkpoint_dir = "ckt/flower"
     batch_size = 128
     updates_per_epoch = 50
-    max_epoch = 500
+    max_epoch = 100
     embedding_dim = 100
 
     exp_name = "flower_%s" % timestamp

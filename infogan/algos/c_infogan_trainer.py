@@ -24,7 +24,7 @@ class ConInfoGANTrainer(object):
                  checkpoint_dir="ckt",
                  max_epoch=100,
                  updates_per_epoch=100,
-                 snapshot_interval=5000,
+                 snapshot_interval=2000,
                  info_reg_coeff=1.0,
                  con_info_reg_coeff=1.0,
                  discriminator_learning_rate=2e-4,
@@ -131,8 +131,13 @@ class ConInfoGANTrainer(object):
                 cont_c_cross_entropy = tf.reduce_mean(-cont_total_log_q_c_give_x)
                 cont_c_mi_est = cont_c_entropy - cont_c_cross_entropy
 
+                # normalize according to embedding_dim
+                cont_c_mi_est = cont_c_mi_est / self.model.ef_dim
+                cont_c_cross_entropy = cont_c_cross_entropy / self.model.ef_dim
+
                 mi_c_est += cont_c_mi_est
                 cross_c_ent += cont_c_cross_entropy
+
                 discriminator_loss -= self.con_info_reg_coeff * cont_c_mi_est
                 generator_loss -= self.con_info_reg_coeff * cont_c_mi_est
 

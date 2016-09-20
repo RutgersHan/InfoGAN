@@ -66,7 +66,7 @@ flower_2016_09_19_16_11_03/flower_2016_09_19_16_11_03_5000.ckpt""".replace('\n',
     mkdir_p(join(args.data_dir, 'val_samples'))
 
     # for cn, caption_vector in enumerate(caption_vectors):
-    for cn in range(20):
+    for cn in range(100):
         real_images, embeddings, _ = dataset.train.next_batch(1)
         array_embeddings = np.tile(embeddings, (args.n_images, 1))
         [gen_image] = sess.run([generated_images],
@@ -85,7 +85,7 @@ flower_2016_09_19_16_11_03/flower_2016_09_19_16_11_03_5000.ckpt""".replace('\n',
         if os.path.isfile(f):
             os.unlink(join(args.data_dir, 'val_samples/' + f))
 
-    for cn in range(20):
+    for cn in range(100):
         caption_images = []
         for i, im in enumerate(caption_image_dic[cn]):
             caption_images.append(im)
