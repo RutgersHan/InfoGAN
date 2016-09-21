@@ -24,9 +24,9 @@ def main():
                         help='Data Directory')
     parser.add_argument('--model_path', type=str, default="""
 /home/han/Documents/CVPR2017/InfoGAN/ckt/flower/
-flower_2016_09_20_15_12_03/flower_2016_09_20_15_12_03_2000.ckpt""".replace('\n', ''),
+flower_2016_09_20_21_34_11/flower_2016_09_20_21_34_11_1000.ckpt""".replace('\n', ''),
                         help='Trained Model Path')
-    parser.add_argument('--n_images', type=int, default=5,
+    parser.add_argument('--n_images', type=int, default=10,
                         help='Number of Images per Caption')
     args = parser.parse_args()
 
@@ -66,7 +66,7 @@ flower_2016_09_20_15_12_03/flower_2016_09_20_15_12_03_2000.ckpt""".replace('\n',
     mkdir_p(join(args.data_dir, 'val_samples'))
 
     # for cn, caption_vector in enumerate(caption_vectors):
-    for cn in range(100):
+    for cn in range(50):
         real_images, embeddings, _ = dataset.train.next_batch(1)
         array_embeddings = np.tile(embeddings, (args.n_images, 1))
         [gen_image] = sess.run([generated_images],
@@ -85,7 +85,7 @@ flower_2016_09_20_15_12_03/flower_2016_09_20_15_12_03_2000.ckpt""".replace('\n',
         if os.path.isfile(f):
             os.unlink(join(args.data_dir, 'val_samples/' + f))
 
-    for cn in range(100):
+    for cn in range(50):
         caption_images = []
         for i, im in enumerate(caption_image_dic[cn]):
             caption_images.append(im)

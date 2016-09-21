@@ -23,8 +23,8 @@ class ConInfoGANTrainer(object):
                  log_dir="logs",
                  checkpoint_dir="ckt",
                  max_epoch=100,
-                 updates_per_epoch=100,
-                 snapshot_interval=2000,
+                 updates_per_epoch=50,
+                 snapshot_interval=1000,
                  info_reg_coeff=1.0,
                  con_info_reg_coeff=1.0,
                  discriminator_learning_rate=2e-4,
@@ -177,27 +177,25 @@ class ConInfoGANTrainer(object):
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
-                # self.visualize_all_factors()  #TODO: Will add back later
-                print("success")
+                self.visualize_all_factors()
 
 
 # TODO: need to change the visualize function
     def visualize_all_factors(self):
-        with tf.Session():
-            fixed_noncat = np.concatenate([
-                np.tile(
-                    self.model.nonreg_latent_dist.sample_prior(10).eval(),
-                    [10, 1]
-                ),
-                self.model.nonreg_latent_dist.sample_prior(self.batch_size - 100).eval(),
-            ], axis=0)
-            fixed_cat = np.concatenate([
-                np.tile(
-                    self.model.reg_latent_dist.sample_prior(10).eval(),
-                    [10, 1]
-                ),
-                self.model.reg_latent_dist.sample_prior(self.batch_size - 100).eval(),
-            ], axis=0)
+        fixed_noncat = np.concatenate([
+            np.tile(
+                self.model.nonreg_latent_dist.sample_prior(10).eval(),
+                [10, 1]
+            ),
+            self.model.nonreg_latent_dist.sample_prior(self.batch_size - 100).eval(),
+        ], axis=0)
+        fixed_cat = np.concatenate([
+            np.tile(
+                self.model.reg_latent_dist.sample_prior(10).eval(),
+                [10, 1]
+            ),
+            self.model.reg_latent_dist.sample_prior(self.batch_size - 100).eval(),
+        ], axis=0)
 
         offset = 0
         for dist_idx, dist in enumerate(self.model.reg_latent_dist.dists):
@@ -235,9 +233,17 @@ class ConInfoGANTrainer(object):
                 raise NotImplementedError
             z_var = tf.constant(np.concatenate([fixed_noncat, cur_cat], axis=1))
 
-            _, x_dist_info = self.model.generate(z_var)
+            if (len(self.model.con_latent_dist.dists) > 0):
+                c_var = self.model.generate_condition(self.embeddings)
+                z_c_var = tf.concat(1, [z_var, c_var])
 
+                fake_x = self.model.generate(z_c_var)
+            else:
+                fake_x = self.model.generate(z_var)
+            img_var = fake_x
+            # print(tf.shape(img_var))
             # just take the mean image
+            '''
             if isinstance(self.model.output_dist, Bernoulli):
                 img_var = x_dist_info["p"]
             elif isinstance(self.model.output_dist, Gaussian):
@@ -245,9 +251,13 @@ class ConInfoGANTrainer(object):
             else:
                 raise NotImplementedError
             img_var = self.dataset.inverse_transform(img_var)
+            '''
+
             rows = 10
             img_var = tf.reshape(img_var, [self.batch_size] + list(self.dataset.image_shape))
+            # print(tf.shape(img_var))
             img_var = img_var[:rows * rows, :, :, :]
+            # print(tf.shape(img_var))
             imgs = tf.reshape(img_var, [rows, rows] + list(self.dataset.image_shape))
             stacked_img = []
             for row in xrange(rows):
@@ -262,54 +272,53 @@ class ConInfoGANTrainer(object):
 
     def train(self):
 
-        self.init_opt()
+        with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+            with tf.device("/gpu:0"):
+                self.init_opt()
+                init = tf.initialize_all_variables()
+                sess.run(init)
 
-        init = tf.initialize_all_variables()
+                summary_op = tf.merge_all_summaries()
+                summary_writer = tf.train.SummaryWriter(self.log_dir, sess.graph)
 
-        with tf.Session() as sess:
-            sess.run(init)
+                saver = tf.train.Saver()
 
-            summary_op = tf.merge_all_summaries()
-            summary_writer = tf.train.SummaryWriter(self.log_dir, sess.graph)
+                counter = 0
 
-            saver = tf.train.Saver()
+                log_vars = [x for _, x in self.log_vars]
+                log_keys = [x for x, _ in self.log_vars]
 
-            counter = 0
+                for epoch in range(self.max_epoch):
+                    widgets = ["epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
+                    pbar = ProgressBar(maxval=self.updates_per_epoch, widgets=widgets)
+                    pbar.start()
 
-            log_vars = [x for _, x in self.log_vars]
-            log_keys = [x for x, _ in self.log_vars]
+                    all_log_vals = []
+                    for i in range(self.updates_per_epoch):
+                        pbar.update(i)
+                        images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
+                        feed_dict = {self.images: images,
+                                     self.embeddings: embeddings}
+                        log_vals = sess.run([self.discriminator_trainer] + log_vars, feed_dict)[1:]
+                        sess.run(self.generator_trainer, feed_dict)
+                        all_log_vals.append(log_vals)
+                        counter += 1
 
-            for epoch in range(self.max_epoch):
-                widgets = ["epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
-                pbar = ProgressBar(maxval=self.updates_per_epoch, widgets=widgets)
-                pbar.start()
+                        if counter % self.snapshot_interval == 0:
+                            snapshot_name = "%s_%s" % (self.exp_name, str(counter))
+                            fn = saver.save(sess, "%s/%s.ckpt" % (self.checkpoint_dir, snapshot_name))
+                            print("Model saved in file: %s" % fn)
 
-                all_log_vals = []
-                for i in range(self.updates_per_epoch):
-                    pbar.update(i)
                     images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
-                    feed_dict = {self.images: images,
-                                 self.embeddings: embeddings}
-                    log_vals = sess.run([self.discriminator_trainer] + log_vars, feed_dict)[1:]
-                    sess.run(self.generator_trainer, feed_dict)
-                    all_log_vals.append(log_vals)
-                    counter += 1
+                    summary_str = sess.run(summary_op, {self.images: images,
+                                                        self.embeddings: embeddings})
+                    summary_writer.add_summary(summary_str, counter)
 
-                    if counter % self.snapshot_interval == 0:
-                        snapshot_name = "%s_%s" % (self.exp_name, str(counter))
-                        fn = saver.save(sess, "%s/%s.ckpt" % (self.checkpoint_dir, snapshot_name))
-                        print("Model saved in file: %s" % fn)
+                    avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
+                    log_dict = dict(zip(log_keys, avg_log_vals))
 
-                images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
-                summary_str = sess.run(summary_op, {self.images: images,
-                                                    self.embeddings: embeddings})
-                summary_writer.add_summary(summary_str, counter)
-
-                avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
-                log_dict = dict(zip(log_keys, avg_log_vals))
-
-                log_line = "; ".join("%s: %s" % (str(k), str(v)) for k, v in zip(log_keys, avg_log_vals))
-                print("Epoch %d | " % (epoch) + log_line)
-                sys.stdout.flush()
-                if np.any(np.isnan(avg_log_vals)):
-                    raise ValueError("NaN detected!")
+                    log_line = "; ".join("%s: %s" % (str(k), str(v)) for k, v in zip(log_keys, avg_log_vals))
+                    print("Epoch %d | " % (epoch) + log_line)
+                    sys.stdout.flush()
+                    if np.any(np.isnan(avg_log_vals)):
+                        raise ValueError("NaN detected!")
