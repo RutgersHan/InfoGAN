@@ -60,7 +60,6 @@ flower_2016_09_20_21_34_11/flower_2016_09_20_21_34_11_5000.ckpt""".replace('\n',
 
     latent_spec = [
         (Uniform(64), False),
-        (Categorical(32), True),
     ]
     con_latent_spec = [
         (LatentGaussian(embedding_dim), True)

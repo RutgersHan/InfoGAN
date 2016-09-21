@@ -68,7 +68,7 @@ class ConRegularizedGAN(object):
         shared_template = \
             (pt.template("input").
              custom_conv2d(self.df_dim, k_h=4, k_w=4).
-             conv_batch_norm.
+             conv_batch_norm().
              apply(leaky_rectify).
              custom_conv2d(self.df_dim * 2, k_h=4, k_w=4).
              conv_batch_norm().
