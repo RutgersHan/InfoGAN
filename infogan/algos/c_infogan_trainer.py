@@ -243,16 +243,6 @@ class ConInfoGANTrainer(object):
             img_var = fake_x
             # print(tf.shape(img_var))
             # just take the mean image
-            '''
-            if isinstance(self.model.output_dist, Bernoulli):
-                img_var = x_dist_info["p"]
-            elif isinstance(self.model.output_dist, Gaussian):
-                img_var = x_dist_info["mean"]
-            else:
-                raise NotImplementedError
-            img_var = self.dataset.inverse_transform(img_var)
-            '''
-
             rows = 10
             img_var = tf.reshape(img_var, [self.batch_size] + list(self.dataset.image_shape))
             # print(tf.shape(img_var))
