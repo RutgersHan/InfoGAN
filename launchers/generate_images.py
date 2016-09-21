@@ -24,7 +24,7 @@ def main():
                         help='Data Directory')
     parser.add_argument('--model_path', type=str, default="""
 /home/han/Documents/CVPR2017/InfoGAN/ckt/flower/
-flower_2016_09_19_16_11_03/flower_2016_09_19_16_11_03_5000.ckpt""".replace('\n', ''),
+flower_2016_09_20_15_12_03/flower_2016_09_20_15_12_03_2000.ckpt""".replace('\n', ''),
                         help='Trained Model Path')
     parser.add_argument('--n_images', type=int, default=5,
                         help='Number of Images per Caption')
