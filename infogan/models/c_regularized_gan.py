@@ -76,9 +76,6 @@ class ConRegularizedGAN(object):
              apply(leaky_rectify).
              custom_conv2d(self.df_dim * 8, k_h=4, k_w=4).
              conv_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(1024).
-             fc_batch_norm().
              apply(leaky_rectify))
         discriminator_template = shared_template.custom_fully_connected(1)
         encoder_template = \
@@ -102,9 +99,6 @@ class ConRegularizedGAN(object):
         s2, s4, s8, s16 = int(s / 2), int(s / 4), int(s / 8), int(s / 16)
         generator_template = \
             (pt.template("input").
-             custom_fully_connected(1024).
-             fc_batch_norm().
-             apply(tf.nn.relu).
              custom_fully_connected(s16 * s16 * self.gf_dim * 8).
              fc_batch_norm().
              apply(tf.nn.relu).
