@@ -24,7 +24,7 @@ class ConInfoGANTrainer(object):
                  checkpoint_dir="ckt",
                  max_epoch=100,
                  updates_per_epoch=50,
-                 snapshot_interval=1000,
+                 snapshot_interval=2000,
                  info_reg_coeff=1.0,
                  con_info_reg_coeff=1.0,
                  discriminator_learning_rate=2e-4,
@@ -69,8 +69,8 @@ class ConInfoGANTrainer(object):
                 = self.model.discriminate(self.images)
             fake_d, _, fake_reg_z_dist_info, _, _, fake_reg_c_dist_info, _ \
                 = self.model.discriminate(fake_x)
-
-            reg_z = self.model.reg_z(z_var)
+            if len(self.model.reg_latent_dist.dists) > 0:
+                reg_z = self.model.reg_z(z_var)
             reg_c = c_var
 
             discriminator_loss = - tf.reduce_mean(tf.log(real_d + TINY) + tf.log(1. - fake_d + TINY))
@@ -189,13 +189,14 @@ class ConInfoGANTrainer(object):
             ),
             self.model.nonreg_latent_dist.sample_prior(self.batch_size - 100).eval(),
         ], axis=0)
-        fixed_cat = np.concatenate([
-            np.tile(
-                self.model.reg_latent_dist.sample_prior(10).eval(),
-                [10, 1]
-            ),
-            self.model.reg_latent_dist.sample_prior(self.batch_size - 100).eval(),
-        ], axis=0)
+        if len(self.model.reg_latent_dist.dists) > 0:
+            fixed_cat = np.concatenate([
+                np.tile(
+                    self.model.reg_latent_dist.sample_prior(10).eval(),
+                    [10, 1]
+                ),
+                self.model.reg_latent_dist.sample_prior(self.batch_size - 100).eval(),
+            ], axis=0)
 
         offset = 0
         for dist_idx, dist in enumerate(self.model.reg_latent_dist.dists):
@@ -231,8 +232,10 @@ class ConInfoGANTrainer(object):
                 offset += dist.dim
             else:
                 raise NotImplementedError
-            z_var = tf.constant(np.concatenate([fixed_noncat, cur_cat], axis=1))
-
+            if len(self.model.reg_latent_dist.dists) > 0:
+                z_var = tf.constant(np.concatenate([fixed_noncat, cur_cat], axis=1))
+            else:
+                z_var = fixed_noncat
             if (len(self.model.con_latent_dist.dists) > 0):
                 c_var = self.model.generate_condition(self.embeddings)
                 z_c_var = tf.concat(1, [z_var, c_var])

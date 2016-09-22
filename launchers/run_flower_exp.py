@@ -21,7 +21,7 @@ if __name__ == "__main__":
     root_checkpoint_dir = "ckt/flower"
     batch_size = 128
     updates_per_epoch = 50
-    max_epoch = 100
+    max_epoch = 1000
     embedding_dim = 100
 
     exp_name = "flower_%s" % timestamp
@@ -39,7 +39,7 @@ if __name__ == "__main__":
 
     latent_spec = [
         (Uniform(64), False),
-        (Categorical(32), True),
+        # (Categorical(32), True),
     ]
 
     con_latent_spec = [

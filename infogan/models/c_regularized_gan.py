@@ -80,12 +80,15 @@ class ConRegularizedGAN(object):
              conv_batch_norm().
              apply(leaky_rectify))
         discriminator_template = shared_template.custom_fully_connected(1)
-        encoder_template = \
-            (shared_template.
-             custom_fully_connected(128).
-             fc_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(self.reg_latent_dist.dist_flat_dim))
+        if self.reg_latent_dist.dist_flat_dim > 0:
+            encoder_template = \
+                (shared_template.
+                 custom_fully_connected(128).
+                 fc_batch_norm().
+                 apply(leaky_rectify).
+                 custom_fully_connected(self.reg_latent_dist.dist_flat_dim))
+        else:
+            encoder_template = None
         context_encoder_template = \
             (shared_template.
              custom_fully_connected(self.con_latent_dist.dist_flat_dim * 2).
@@ -132,13 +135,20 @@ class ConRegularizedGAN(object):
     def discriminate(self, x_var):
         d_out = self.discriminator_template.construct(input=x_var)
         d = tf.nn.sigmoid(d_out[:, 0])
-        reg_dist_flat = self.encoder_template.construct(input=x_var)
-        reg_dist_info = self.reg_latent_dist.activate_dist(reg_dist_flat)
         con_dist_flat = self.context_encoder_template.construct(input=x_var)
         con_dist_info = self.con_latent_dist.activate_dist(con_dist_flat)
-        return (d, self.reg_latent_dist.sample(reg_dist_info), reg_dist_info,
-                reg_dist_flat, self.con_latent_dist.sample(con_dist_info),
-                con_dist_info, con_dist_flat)
+        if self.reg_latent_dist.dist_flat_dim > 0:
+            reg_dist_flat = self.encoder_template.construct(input=x_var)
+            reg_dist_info = self.reg_latent_dist.activate_dist(reg_dist_flat)
+            return (d, self.reg_latent_dist.sample(reg_dist_info), reg_dist_info,
+                    reg_dist_flat, self.con_latent_dist.sample(con_dist_info),
+                    con_dist_info, con_dist_flat)
+        else:
+            reg_dist_flat = None
+            reg_dist_info = None
+            return (d, None, reg_dist_info,
+                    reg_dist_flat, self.con_latent_dist.sample(con_dist_info),
+                    con_dist_info, con_dist_flat)
 
     def generate(self, z_var):
         x_dist = self.generator_template.construct(input=z_var)
