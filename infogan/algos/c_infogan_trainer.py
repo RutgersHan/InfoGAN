@@ -67,6 +67,7 @@ class ConInfoGANTrainer(object):
         with pt.defaults_scope(phase=pt.Phase.train):
             z_var = self.model.latent_dist.sample_prior(self.batch_size)
             c_var = self.model.generate_condition(self.embeddings)
+            self.log_vars.append(("condition", c_var))
             z_c_var = tf.concat(1, [z_var, c_var])
             fake_x = self.model.generate(z_c_var)
             real_d, _, _, _, _, real_reg_c_dist_info, _ \
@@ -185,7 +186,10 @@ class ConInfoGANTrainer(object):
             self.encoder_trainer = pt.apply_optimizer(encoder_optimizer, losses=[encoder_loss], var_list=e_vars)
 
             for k, v in self.log_vars:
-                tf.scalar_summary(k, v)
+                if k == 'condition':
+                    tf.histogram_summary(k, v)
+                else:
+                    tf.scalar_summary(k, v)
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
@@ -316,8 +320,16 @@ class ConInfoGANTrainer(object):
                     sess.run(tf.initialize_all_variables())
                     counter = 0
 
-                log_vars = [x for _, x in self.log_vars]
-                log_keys = [x for x, _ in self.log_vars]
+                # log_vars = [x for _, x in self.log_vars]
+                # log_keys = [x for x, _ in self.log_vars]
+                log_keys = []
+                log_vars = []
+                for k, v in self.log_vars:
+                    if k == 'condition':
+                        condition_var = [v]
+                    else:
+                        log_keys.append(k)
+                        log_vars.append(v)
 
                 for epoch in range(int(counter / self.updates_per_epoch), self.max_epoch):
                     widgets = ["epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
@@ -330,7 +342,7 @@ class ConInfoGANTrainer(object):
                         images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         feed_dict = {self.images: images,
                                      self.embeddings: embeddings}
-                        log_vals = sess.run([self.discriminator_trainer] + log_vars, feed_dict)[1:]
+                        log_vals = sess.run([self.discriminator_trainer] + condition_var + log_vars, feed_dict)[2:]
                         sess.run(self.generator_trainer, feed_dict)
                         sess.run(self.encoder_trainer, feed_dict)
                         all_log_vals.append(log_vals)
