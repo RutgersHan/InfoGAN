@@ -30,6 +30,7 @@ class ConInfoGANTrainer(object):
                  con_info_reg_coeff=1.0,
                  discriminator_learning_rate=2e-4,
                  generator_learning_rate=2e-4,
+                 encoder_learning_rate=2e-4
                  ):
         """
         :type model: RegularizedGAN
@@ -46,6 +47,7 @@ class ConInfoGANTrainer(object):
         self.updates_per_epoch = updates_per_epoch
         self.generator_learning_rate = generator_learning_rate
         self.discriminator_learning_rate = discriminator_learning_rate
+        self.encoder_learning_rate = encoder_learning_rate
         self.info_reg_coeff = info_reg_coeff
         self.con_info_reg_coeff = con_info_reg_coeff
         self.discriminator_trainer = None
@@ -140,8 +142,7 @@ class ConInfoGANTrainer(object):
                 mi_c_est += cont_c_mi_est
                 cross_c_ent += cont_c_cross_entropy
 
-                discriminator_loss -= self.con_info_reg_coeff * cont_c_mi_est
-                generator_loss -= self.con_info_reg_coeff * cont_c_mi_est
+                encoder_loss = -self.con_info_reg_coeff * cont_c_mi_est
 
             # TODO: add corresponding log for condition
             for idx, dist_info in enumerate(self.model.reg_latent_dist.split_dist_info(fake_reg_z_dist_info)):
@@ -155,12 +156,18 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("CrossEnt_C", cross_c_ent))
 
             all_vars = tf.trainable_variables()
+            de_vars = [var for var in all_vars if
+                       (var.name.startswith('d_') or
+                        var.name.startswith('c_'))]
+            ge_vars = [var for var in all_vars if
+                       (var.name.startswith('g_') or
+                        var.name.startswith('c_'))]
+            e_vars = [var for var in all_vars if
+                      var.name.startswith('c_')]
             d_vars = [var for var in all_vars if
-                      (var.name.startswith('d_') or
-                       var.name.startswith('c_'))]
+                      var.name.startswith('d_')]
             g_vars = [var for var in all_vars if
-                      (var.name.startswith('g_') or
-                       var.name.startswith('c_'))]
+                      var.name.startswith('g_')]
 
             self.log_vars.append(("max_real_d", tf.reduce_max(real_d)))
             self.log_vars.append(("min_real_d", tf.reduce_min(real_d)))
@@ -173,6 +180,9 @@ class ConInfoGANTrainer(object):
 
             generator_optimizer = tf.train.AdamOptimizer(self.generator_learning_rate, beta1=0.5)
             self.generator_trainer = pt.apply_optimizer(generator_optimizer, losses=[generator_loss], var_list=g_vars)
+
+            encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
+            self.encoder_trainer = pt.apply_optimizer(encoder_optimizer, losses=[encoder_loss], var_list=e_vars)
 
             for k, v in self.log_vars:
                 tf.scalar_summary(k, v)
@@ -322,6 +332,7 @@ class ConInfoGANTrainer(object):
                                      self.embeddings: embeddings}
                         log_vals = sess.run([self.discriminator_trainer] + log_vars, feed_dict)[1:]
                         sess.run(self.generator_trainer, feed_dict)
+                        sess.run(self.encoder_trainer, feed_dict)
                         all_log_vals.append(log_vals)
                         counter += 1
 
