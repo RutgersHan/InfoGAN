@@ -30,14 +30,13 @@ def read_captions(file_name):
     return captions, caption_vectors
 
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default="/home/han/Documents/CVPR2017/InfoGAN/",
                         help='Data Directory')
     parser.add_argument('--model_path', type=str, default="""
 /home/han/Documents/CVPR2017/InfoGAN/ckt/flower/
-flower_2016_09_20_21_34_11/flower_2016_09_20_21_34_11_5000.ckpt""".replace('\n', ''),
+flower_2016_09_21_18_59_45/flower_2016_09_21_18_59_45_46000.ckpt""".replace('\n', ''),
                         help='Trained Model Path')
     parser.add_argument('--n_images', type=int, default=10,
                         help='Number of Images per Caption')
@@ -60,7 +59,6 @@ flower_2016_09_20_21_34_11/flower_2016_09_20_21_34_11_5000.ckpt""".replace('\n',
 
     latent_spec = [
         (Uniform(64), False),
-        (Categorical(32), True),
     ]
     con_latent_spec = [
         (LatentGaussian(embedding_dim), True)
