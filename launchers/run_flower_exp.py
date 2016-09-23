@@ -19,6 +19,8 @@ if __name__ == "__main__":
 
     root_log_dir = "logs/flower"
     root_checkpoint_dir = "ckt/flower"
+    # e.g "ckt/flower/flower_2016_09_22_06_48_22/flower_2016_09_22_06_48_22_40000.ckpt"
+    pretrained_model = None
     batch_size = 128
     updates_per_epoch = 50
     max_epoch = 1000
@@ -32,7 +34,7 @@ if __name__ == "__main__":
     mkdir_p(log_dir)
     mkdir_p(checkpoint_dir)
 
-    file_name = '/home/han/Documents/CVPR2017/data/flowers/flowers64.pickle'
+    file_name = 'Data/flowers/flowers64.pickle'
 
     dataset = FlowerDataset(file_name)
     dataset.get_data()
@@ -63,6 +65,7 @@ if __name__ == "__main__":
         exp_name=exp_name,
         log_dir=log_dir,
         checkpoint_dir=checkpoint_dir,
+        pretrained_model=pretrained_model,
         max_epoch=max_epoch,
         updates_per_epoch=updates_per_epoch,
         info_reg_coeff=1.0,

@@ -3,13 +3,13 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from infogan.models.c_regularized_gan import ConRegularizedGAN
 import prettytensor as pt
 import tensorflow as tf
 import numpy as np
+import sys
+from six.moves import range
 from progressbar import ETA, Bar, Percentage, ProgressBar
 from infogan.misc.distributions import Bernoulli, Gaussian, Categorical
-import sys
 
 TINY = 1e-8
 
@@ -22,6 +22,7 @@ class ConInfoGANTrainer(object):
                  exp_name="experiment",
                  log_dir="logs",
                  checkpoint_dir="ckt",
+                 pretrained_model=None,
                  max_epoch=100,
                  updates_per_epoch=50,
                  snapshot_interval=2000,
@@ -40,6 +41,7 @@ class ConInfoGANTrainer(object):
         self.exp_name = exp_name
         self.log_dir = log_dir
         self.checkpoint_dir = checkpoint_dir
+        self.model_path = pretrained_model
         self.snapshot_interval = snapshot_interval
         self.updates_per_epoch = updates_per_epoch
         self.generator_learning_rate = generator_learning_rate
@@ -179,8 +181,38 @@ class ConInfoGANTrainer(object):
             with tf.variable_scope("model", reuse=True) as scope:
                 self.visualize_all_factors()
 
+    def visualize_one_factor(self, fixed_noncat, cur_cat, filename):
+        if cur_cat is None:
+            z_var = fixed_noncat
+        else:
+            z_var = tf.constant(np.concatenate([fixed_noncat, cur_cat], axis=1))
 
-# TODO: need to change the visualize function
+        if (len(self.model.con_latent_dist.dists) > 0):
+            c_var = self.model.generate_condition(self.embeddings)
+            z_c_var = tf.concat(1, [z_var, c_var])
+
+            fake_x = self.model.generate(z_c_var)
+        else:
+            fake_x = self.model.generate(z_var)
+
+        img_var = fake_x
+
+        rows = 10
+        img_var = tf.reshape(img_var, [self.batch_size] + list(self.dataset.image_shape))
+        img_var = img_var[:rows * rows, :, :, :]
+        imgs = tf.reshape(img_var, [rows, rows] + list(self.dataset.image_shape))
+        stacked_img = []
+        for row in range(rows):
+            row_img = []
+            row_img.append(self.images[row * rows, :, :, :])  # real image
+            for col in range(rows):
+                row_img.append(imgs[row, col, :, :, :])
+            # each rows is 1realimage +10_fakeimage
+            stacked_img.append(tf.concat(1, row_img))
+        imgs = tf.concat(0, stacked_img)
+        imgs = tf.expand_dims(imgs, 0)
+        tf.image_summary(filename, imgs)
+
     def visualize_all_factors(self):
         fixed_noncat = np.concatenate([
             np.tile(
@@ -189,7 +221,9 @@ class ConInfoGANTrainer(object):
             ),
             self.model.nonreg_latent_dist.sample_prior(self.batch_size - 100).eval(),
         ], axis=0)
-        if len(self.model.reg_latent_dist.dists) > 0:
+
+        fixed_cat = None
+        if (len(self.model.reg_latent_dist.dists) > 0):
             fixed_cat = np.concatenate([
                 np.tile(
                     self.model.reg_latent_dist.sample_prior(10).eval(),
@@ -198,8 +232,15 @@ class ConInfoGANTrainer(object):
                 self.model.reg_latent_dist.sample_prior(self.batch_size - 100).eval(),
             ], axis=0)
 
+        # fixed both nonreg_latent_dist and reg_latent_dist for each column,
+        # but con_latent_dist is different
+        self.visualize_one_factor(fixed_noncat, fixed_cat, "image_fixedall")
+
+        # fixed nonreg_latent_dist but different reg_latent_dist
+        # and con_latent_dist for each column
         offset = 0
         for dist_idx, dist in enumerate(self.model.reg_latent_dist.dists):
+            cur_cat = None
             if isinstance(dist, Gaussian):
                 assert dist.dim == 1, "Only dim=1 is currently supported"
                 c_vals = []
@@ -208,7 +249,7 @@ class ConInfoGANTrainer(object):
                 c_vals.extend([0.] * (self.batch_size - 100))
                 vary_cat = np.asarray(c_vals, dtype=np.float32).reshape((-1, 1))
                 cur_cat = np.copy(fixed_cat)
-                cur_cat[:, offset:offset+1] = vary_cat
+                cur_cat[:, offset:offset + 1] = vary_cat
                 offset += 1
             elif isinstance(dist, Categorical):
                 lookup = np.eye(dist.dim, dtype=np.float32)
@@ -217,7 +258,7 @@ class ConInfoGANTrainer(object):
                     cat_ids.extend([idx] * 10)
                 cat_ids.extend([0] * (self.batch_size - 100))
                 cur_cat = np.copy(fixed_cat)
-                cur_cat[:, offset:offset+dist.dim] = lookup[cat_ids]
+                cur_cat[:, offset:offset + dist.dim] = lookup[cat_ids]
                 offset += dist.dim
             elif isinstance(dist, Bernoulli):
                 assert dist.dim == 1, "Only dim=1 is currently supported"
@@ -227,44 +268,23 @@ class ConInfoGANTrainer(object):
                     cat_ids.extend([int(idx / 5)] * 10)
                 cat_ids.extend([0] * (self.batch_size - 100))
                 cur_cat = np.copy(fixed_cat)
-                cur_cat[:, offset:offset+dist.dim] = np.expand_dims(np.array(cat_ids), axis=-1)
+                cur_cat[:, offset:offset + dist.dim] = np.expand_dims(np.array(cat_ids), axis=-1)
                 # import ipdb; ipdb.set_trace()
                 offset += dist.dim
             else:
                 raise NotImplementedError
-            if len(self.model.reg_latent_dist.dists) > 0:
-                z_var = tf.constant(np.concatenate([fixed_noncat, cur_cat], axis=1))
-            else:
-                z_var = fixed_noncat
-            if (len(self.model.con_latent_dist.dists) > 0):
-                c_var = self.model.generate_condition(self.embeddings)
-                z_c_var = tf.concat(1, [z_var, c_var])
 
-                fake_x = self.model.generate(z_c_var)
-            else:
-                fake_x = self.model.generate(z_var)
-            img_var = fake_x
-            # print(tf.shape(img_var))
-            # just take the mean image
-            rows = 10
-            img_var = tf.reshape(img_var, [self.batch_size] + list(self.dataset.image_shape))
-            # print(tf.shape(img_var))
-            img_var = img_var[:rows * rows, :, :, :]
-            # print(tf.shape(img_var))
-            imgs = tf.reshape(img_var, [rows, rows] + list(self.dataset.image_shape))
-            stacked_img = []
-            for row in xrange(rows):
-                row_img = []
-                for col in xrange(rows):
-                    row_img.append(imgs[row, col, :, :, :])
-                stacked_img.append(tf.concat(1, row_img))
-            imgs = tf.concat(0, stacked_img)
-            imgs = tf.expand_dims(imgs, 0)
-            tf.image_summary("image_%d_%s" % (dist_idx, dist.__class__.__name__), imgs)
+            filename = "image_%d_%s" % (dist_idx, dist.__class__.__name__)
+            self.visualize_one_factor(fixed_noncat, cur_cat, filename)
 
+    def preprocess(self, embeddings):
+        # make sure every row with 10 column have the same embeddings
+        for i in range(10):
+            for j in range(1, 10):
+                embeddings[i * 10 + j] = embeddings[i * 10]
+        return embeddings
 
     def train(self):
-
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
             with tf.device("/gpu:0"):
                 self.init_opt()
@@ -276,12 +296,20 @@ class ConInfoGANTrainer(object):
 
                 saver = tf.train.Saver()
 
-                counter = 0
+                if self.model_path:
+                    print("Reading model parameters from %s" % self.model_path)
+                    saver.restore(sess, self.model_path)
+                    counter = self.model_path[self.model_path.rfind('_') + 1:self.model_path.rfind('.')]
+                    counter = int(counter)
+                else:
+                    print("Created model with fresh parameters.")
+                    sess.run(tf.initialize_all_variables())
+                    counter = 0
 
                 log_vars = [x for _, x in self.log_vars]
                 log_keys = [x for x, _ in self.log_vars]
 
-                for epoch in range(self.max_epoch):
+                for epoch in range(int(counter / self.updates_per_epoch), self.max_epoch):
                     widgets = ["epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
                     pbar = ProgressBar(maxval=self.updates_per_epoch, widgets=widgets)
                     pbar.start()
@@ -303,6 +331,7 @@ class ConInfoGANTrainer(object):
                             print("Model saved in file: %s" % fn)
 
                     images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
+                    embeddings = self.preprocess(embeddings)
                     summary_str = sess.run(summary_op, {self.images: images,
                                                         self.embeddings: embeddings})
                     summary_writer.add_summary(summary_str, counter)
