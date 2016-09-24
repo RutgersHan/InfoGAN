@@ -131,10 +131,14 @@ class ConInfoGANTrainer(object):
                 )
                 cont_total_log_q_c_give_x = (cont_real_log_q_c_given_x +
                                              cont_fake_log_q_c_given_x) * 0.5  # TODO need to check whether need 0.5 here
+                # Has a problem
                 cont_prior_log_q_c = self.model.con_latent_dist.logli_prior(cont_reg_c)
+
                 cont_c_entropy = tf.reduce_mean(-cont_prior_log_q_c)
                 cont_c_cross_entropy = tf.reduce_mean(-cont_total_log_q_c_give_x)
-                cont_c_mi_est = cont_c_entropy - cont_c_cross_entropy
+
+                # cont_c_mi_est = cont_c_entropy - cont_c_cross_entropy
+                cont_c_mi_est = - cont_c_cross_entropy
 
                 # normalize according to embedding_dim
                 cont_c_mi_est = cont_c_mi_est / self.model.ef_dim
@@ -143,7 +147,7 @@ class ConInfoGANTrainer(object):
                 mi_c_est += cont_c_mi_est
                 cross_c_ent += cont_c_cross_entropy
 
-                encoder_loss = -self.con_info_reg_coeff * cont_c_mi_est
+                encoder_loss = -self.con_info_reg_coeff * mi_c_est
 
             # TODO: add corresponding log for condition
             for idx, dist_info in enumerate(self.model.reg_latent_dist.split_dist_info(fake_reg_z_dist_info)):
