@@ -5,8 +5,8 @@ from infogan.misc.distributions import Uniform, Categorical, LatentGaussian, Mea
 import tensorflow as tf
 import os
 from infogan.misc.datasets_embedding import FlowerDataset
-from infogan.models.c_regularized_gan import ConRegularizedGAN
-from infogan.algos.c_infogan_trainer import ConInfoGANTrainer
+from infogan.models.v_regularized_gan import ConRegularizedGAN
+from infogan.algos.v_infogan_trainer import ConInfoGANTrainer
 from infogan.misc.utils import mkdir_p
 import dateutil
 import dateutil.tz
@@ -21,7 +21,7 @@ if __name__ == "__main__":
     root_checkpoint_dir = "ckt/flower"
     # e.g "ckt/flower/flower_2016_09_22_06_48_22/flower_2016_09_22_06_48_22_40000.ckpt"
     pretrained_model = None
-    batch_size = 256
+    batch_size = 128
     updates_per_epoch = 50
     max_epoch = 1000
     embedding_dim = 100

@@ -96,6 +96,9 @@ class Distribution(object):
     def sample_prior(self, batch_size):
         return self.sample(self.prior_dist_info(batch_size))
 
+    def sample_prior_with_condition(self, batch_size, mean, log_sigma):
+        raise NotImplementedError
+
     def prior_dist_info(self, batch_size):
         """
         :return: a dictionary containing distribution information about the standard prior distribution, the shape
@@ -275,6 +278,26 @@ class LatentGaussian(Gaussian):
     def sample_prior(self, prior):
         return prior
 
+    def sample_prior_with_condition(self, batch_size, mean, log_sigma):
+        return self.sample_gaussian_with_logsigma(mean, log_sigma)
+
+    def sampleGaussian(self, mu, sigma):
+        """Draw sample from Gaussian with given shape, subject to random noise epsilon"""
+        with tf.name_scope("sample_gaussian"):
+            # reparameterization trick
+            epsilon = tf.random_normal(tf.shape(sigma), name="epsilon")
+            return mu + epsilon * sigma
+
+    def sample_gaussian_with_logsigma(self, mu, log_sigma):
+        """(Differentiably!) draw sample from Gaussian with given shape, subject to random noise epsilon"""
+        with tf.name_scope("sample_gaussian"):
+            # reparameterization trick
+            epsilon = tf.random_normal(tf.shape(log_sigma), name="epsilon")
+            return mu + epsilon * tf.exp(log_sigma)  # N(mu, I * sigma**2)
+
+
+
+
 
 class Bernoulli(Distribution):
     def __init__(self, dim):
@@ -450,6 +473,13 @@ class Product(Distribution):
         ret = []
         for dist_i in self.dists:
             ret.append(tf.cast(dist_i.sample_prior(batch_size), tf.float32))
+        return tf.concat(1, ret)
+
+    def sample_prior_with_condition(self, batch_size, mean, log_sigma):
+        ret = []
+        for dist_i in self.dists:
+            ret.append(tf.cast(dist_i.sample_prior_with_condition(
+                batch_size, mean, log_sigma), tf.float32))
         return tf.concat(1, ret)
 
     def logli(self, x_var, dist_info):
