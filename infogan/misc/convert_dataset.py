@@ -16,7 +16,7 @@ from utils import get_image, colorize
 
 IMSIZE = 64
 FLOWER_DIR = '/home/han/Documents/CVPR2017/data/flowers'
-
+BIRD_DIR = '/home/tao/deep_learning/CVPR2017/Han/InfoGAN/Data/birds'
 
 def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
@@ -32,8 +32,7 @@ def _float_feature(value):
 
 def convert_flowers_dataset_pickle(data_dir, train_ratio=0.75):
     h = h5py.File(os.path.join(data_dir, 'flower_tv.hdf5'))
-    outfile = os.path.join(data_dir, 'flowers' + str(IMSIZE)
-                                               + '.pickle')
+    outfile = os.path.join(data_dir, 'flowers' + str(IMSIZE) + '.pickle')
     flower_captions = {}
     for ds in h.iteritems():
         flower_captions[ds[0]] = np.array(ds[1])
@@ -67,47 +66,9 @@ def convert_flowers_dataset_pickle(data_dir, train_ratio=0.75):
                      embeddings, labels], f_out)
 
 
-def convert_flowers_test_dataset_pickle(data_dir, train_ratio=0.75):
-    h = h5py.File(os.path.join(data_dir, 'flower_tv.hdf5'))
-    outfile = os.path.join(data_dir, 'flowers' + str(IMSIZE) + 'test'
-                                               + '.pickle')
-    flower_captions = {}
-    for ds in h.iteritems():
-        flower_captions[ds[0]] = np.array(ds[1])
-        image_list = [key for key in flower_captions]
-    image_list.sort()
-    training_num = int(len(image_list) * train_ratio)
-    test_image_list = image_list[training_num:]
-    height = IMSIZE
-    width = IMSIZE
-    depth = 3
-    embedding_num = 5
-    images = []
-    embeddings = []
-    labels = []
-    for i, f in enumerate(test_image_list):
-        f_name = os.path.join(data_dir, 'jpg', f)
-        image = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
-        image = colorize(image)
-        assert image.shape == (IMSIZE, IMSIZE, 3)
-        image += 1.
-        image *= (255. / 2.)
-        image = image.astype('uint8')
-        embedding = flower_captions[f]
-        label = 0  # temporary
-        print('%d\t%d' % (i, label))
-        images.append(image)
-        embeddings.append(embedding)
-        labels.append(label)
-    with open(outfile, 'wb') as f_out:
-        pickle.dump([height, width, depth, embedding_num, images,
-                     embeddings, labels], f_out)
-
-
 def convert_flowers_dataset_tf(data_dir, train_ratio=0.75):
     h = h5py.File(os.path.join(data_dir, 'flower_tv.hdf5'))
-    outfile = os.path.join(data_dir, 'flowers' + str(IMSIZE)
-                                               + '.tfrecords')
+    outfile = os.path.join(data_dir, 'flowers' + str(IMSIZE) + '.tfrecords')
     flower_captions = {}
     for ds in h.iteritems():
         flower_captions[ds[0]] = np.array(ds[1])
@@ -137,12 +98,73 @@ def convert_flowers_dataset_tf(data_dir, train_ratio=0.75):
             'image_raw': _bytes_feature(image_raw),
             'embedding': _float_feature(embedding.astype(
                 'float32').flatten().tolist()),
-            'label': _int64_feature(label)
-            }))
+            'label': _int64_feature(label)}))
         writer.write(example.SerializeToString())
     writer.close()
+
+
+def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
+    h = h5py.File(os.path.join(data_dir, 'bird_tv.hdf5'))
+
+    class_list = []
+    image_lists = {}
+    captions = {}
+    for ds in h.iteritems():
+        class_name = ds[0]
+        class_list.append(class_name)
+        image_lists[class_name] = []
+        for ds2 in ds[1].iteritems():
+            filename = ds2[0]
+            image_path = os.path.join(class_name, filename)
+            captions[image_path] = np.array(ds2[1])
+            #print(captions[image_path][:10])
+            image_lists[class_name].append(image_path)
+
+    class_list.sort()
+
+    training_num = int(len(class_list) * train_ratio)
+    training_class_list = class_list[0:training_num]
+    test_class_list = class_list[training_num:]
+    print(len(training_class_list), len(test_class_list))
+
+    height = IMSIZE
+    width = IMSIZE
+    depth = 3
+    embedding_num = 10
+    images = []
+    embeddings = []
+    labels = []
+    for i, c in enumerate(training_class_list):
+        for j, f in enumerate(image_lists[c]):
+            f_name = os.path.join(data_dir, 'jpg', f)
+            # print(f_name)
+
+            image = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
+            image = colorize(image)
+
+            assert image.shape == (IMSIZE, IMSIZE, 3)
+            image += 1.
+            image *= (255. / 2.)
+            image = image.astype('uint8')
+            embedding = captions[f]
+            # print(f)
+            # print(embedding)
+
+            label = i  # temporary
+            print('%d\t%d' % (j, label))
+            images.append(image)
+            embeddings.append(embedding)
+            labels.append(label)
+
+    outfile_train = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'train.pickle')
+    outfile_test = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'test.pickle')
+    with open(outfile_train, 'wb') as f_out:
+        pickle.dump([height, width, depth, embedding_num, images,
+                     embeddings, labels], f_out)
+
 
 if __name__ == '__main__':
     # convert_flowers_dataset_pickle(FLOWER_DIR)
     # convert_flowers_dataset_tf(FLOWER_DIR)
-    convert_flowers_test_dataset_pickle(FLOWER_DIR)
+    #convert_flowers_test_dataset_pickle(FLOWER_DIR)
+    convert_birds_dataset_pickle(BIRD_DIR)

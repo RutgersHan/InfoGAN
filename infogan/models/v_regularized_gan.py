@@ -59,7 +59,7 @@ class ConRegularizedGAN(object):
 
     def context_embedding(self):
         template = (pt.template("input").
-                    custom_fully_connected(self.ef_dim * 2).
+                    custom_fully_connected(self.ef_dim * 4).
                     fc_batch_norm().
                     apply(tf.nn.relu).
                     custom_fully_connected(self.ef_dim * 2))
@@ -158,8 +158,8 @@ class ConRegularizedGAN(object):
     def discriminate(self, x_var):
         d_out = self.discriminator_template.construct(input=x_var)
         f_out = self.feature_template.construct(input=x_var)
-        e_out = self.context_encoder_template.construct(input=x_var)
-        return d_out, f_out, e_out
+        # e_out = self.context_encoder_template.construct(input=x_var)
+        return d_out, f_out  # , e_out
 
     def generate(self, z_var):
         x_dist = self.generator_template.construct(input=z_var)

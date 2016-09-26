@@ -88,11 +88,12 @@ class Dataset(object):
 
 
 class FlowerDataset(object):
-    def __init__(self, pickle_path):
-        self._pickle_path = pickle_path
+    def __init__(self):
+        self.train = None
+        self.test = None
 
-    def get_data(self, flip_flag=True):
-        with open(self._pickle_path, 'rb') as f:
+    def get_data(self, pickle_path, flip_flag=True):
+        with open(pickle_path, 'rb') as f:
             height, width, depth, embedding_num, \
                 images, embeddings, labels = pickle.load(f)
             array_images = np.array([image for image in images])
@@ -103,4 +104,5 @@ class FlowerDataset(object):
             self.image_dim = height * width * depth
             self.image_shape = [height, width, depth]
             self.embedding_shape = [array_embeddings.shape[-1]]
-            self.train = Dataset(array_images, array_embeddings, array_labels)
+            # self.train = Dataset(array_images, array_embeddings, array_labels)
+            return Dataset(array_images, array_embeddings, array_labels)
