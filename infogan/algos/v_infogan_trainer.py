@@ -134,8 +134,6 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("g_loss_noise", g_loss2))
             self.log_vars.append(("g_like_loss_reweight", recon_vs_gan * like_loss))
 
-
-
             all_vars = tf.trainable_variables()
 
             e_vars = [var for var in all_vars if
