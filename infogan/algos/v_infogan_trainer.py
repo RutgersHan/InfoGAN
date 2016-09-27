@@ -162,11 +162,21 @@ class ConInfoGANTrainer(object):
             encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
             self.encoder_trainer = pt.apply_optimizer(encoder_optimizer, losses=[encoder_loss], var_list=e_vars)
 
+            all_sum = {}
             for k, v in self.log_vars:
                 if k.startswith('condition'):
-                    tf.histogram_summary(k, v)
+                    all_sum[k] = tf.histogram_summary(k, v)
                 else:
-                    tf.scalar_summary(k, v)
+                    all_sum[k] = tf.scalar_summary(k, v)
+            self.g_sum = tf.merge_summary([all_sum['g_loss_fake'], all_sum['g_loss_noise'],
+                                           all_sum['g_like_loss_reweight'], all_sum['generator_loss']])
+            self.d_sum = tf.merge_summary([all_sum['d_loss_fake'], all_sum['d_loss_noise'],
+                                           all_sum['d_loss_real'], all_sum['discriminator_loss']])
+            self.e_sum = tf.merge_summary([all_sum['e_kl_loss'], all_sum['e_like_loss'],
+                                           all_sum['encoder_loss']])
+            self.other_sum = tf.merge_summary([all_sum['max_real_p'], all_sum['min_real_p'],
+                                               all_sum['max_fake_p'], all_sum['min_fake_p'],
+                                               all_sum['condition_mean'], all_sum['condition_log_sigma']])
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
@@ -174,30 +184,29 @@ class ConInfoGANTrainer(object):
                 print("success")
 
     def visualize_one_superimage(self, img_var, images, rows, filename):
-        imgs = tf.reshape(img_var, [rows, rows] + list(self.dataset.image_shape))
         stacked_img = []
         for row in range(rows):
             row_img = []
             row_img.append(images[row * rows, :, :, :])  # real image
             for col in range(rows):
-                row_img.append(imgs[row, col, :, :, :])
+                row_img.append(img_var[row * rows + col, :, :, :])
             # each rows is 1realimage +10_fakeimage
             stacked_img.append(tf.concat(1, row_img))
         imgs = tf.concat(0, stacked_img)
         imgs = tf.expand_dims(imgs, 0)
-        tf.image_summary(filename, imgs)
+        current_img_summary = tf.image_summary(filename, imgs)
+        return current_img_summary
 
     def visualization(self):
         c_var = self.model.generate_condition(self.embeddings)
         z_c_var = c_var[0] + c_var[1] * self.z_noise_c_var
         img_c_var = self.model.generate(z_c_var)
-        img_c_var = tf.reshape(img_c_var, [self.batch_size] + list(self.dataset.image_shape))
-        self.visualize_one_superimage(img_c_var[:64, :, :, :], self.images[:64, :, :, :], 8, "train_image_on_text")
-        self.visualize_one_superimage(img_c_var[64:128, :, :, :], self.images[64:128, :, :, :], 8, "test_image_on_text")
+        img_sum1 = self.visualize_one_superimage(img_c_var[:64, :, :, :], self.images[:64, :, :, :], 8, "train_image_on_text")
+        img_sum2 = self.visualize_one_superimage(img_c_var[64:128, :, :, :], self.images[64:128, :, :, :], 8, "test_image_on_text")
 
         img_noise = self.model.generate(self.z_noise)
-        img_noise = tf.reshape(img_noise, [self.batch_size] + list(self.dataset.image_shape))
-        self.visualize_one_superimage(img_noise[:64, :, :, :], self.images[:64, :, :, :], 8, "image_on_noise")
+        img_sum3 = self.visualize_one_superimage(img_noise[:64, :, :, :], self.images[:64, :, :, :], 8, "image_on_noise")
+        self.image_summary = tf.merge_summary([img_sum1, img_sum2, img_sum3])
 
     def preprocess(self, embeddings):
         # make sure every row with 10 column have the same embeddings
@@ -209,12 +218,12 @@ class ConInfoGANTrainer(object):
 
     def train(self):
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-            with tf.device("/gpu:0"):
+            with tf.device("/gpu:1"):
                 self.init_opt()
                 init = tf.initialize_all_variables()
                 sess.run(init)
 
-                summary_op = tf.merge_all_summaries()
+                # summary_op = tf.merge_all_summaries()
                 summary_writer = tf.train.SummaryWriter(self.log_dir, sess.graph)
 
                 saver = tf.train.Saver()
@@ -240,7 +249,6 @@ class ConInfoGANTrainer(object):
                     else:
                         log_keys.append(k)
                         log_vars.append(v)
-                feed_out = [self.discriminator_trainer] + log_vars + condition_var
 
                 for epoch in range(int(counter / self.updates_per_epoch), self.max_epoch):
                     widgets = ["epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
@@ -250,17 +258,37 @@ class ConInfoGANTrainer(object):
                     all_log_vals = []
                     for i in range(self.updates_per_epoch):
                         pbar.update(i)
+                        # training d
                         images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         z1 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                         z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
-                        feed_dict = {self.images: images,
-                                     self.embeddings: embeddings,
-                                     self.z_noise_c_var: z1,
-                                     self.z_noise: z2}
+                        feed_dict_d = {self.images: images,
+                                       self.embeddings: embeddings,
+                                       self.z_noise_c_var: z1,
+                                       self.z_noise: z2}
+                        _, d_summary, log_vals, condition_vals, other_summary = sess.run(
+                            [self.discriminator_trainer, self.d_sum,
+                             log_vars, condition_var, self.other_sum], feed_dict_d)
 
-                        log_vals = sess.run(feed_out, feed_dict)[1:len(log_vars) + 1]
-                        sess.run(self.generator_trainer, feed_dict)
-                        sess.run(self.encoder_trainer, feed_dict)
+                        summary_writer.add_summary(d_summary, counter)
+                        summary_writer.add_summary(other_summary, counter)
+                        # training g&e
+                        images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
+                        z1 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+                        z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+                        feed_dict_ge = {self.images: images,
+                                        self.embeddings: embeddings,
+                                        self.z_noise_c_var: z1,
+                                        self.z_noise: z2}
+                        _, g_summary = sess.run(
+                            [self.generator_trainer, self.g_sum], feed_dict_ge
+                        )
+
+                        _, e_summary = sess.run(
+                            [self.encoder_trainer, self. e_sum], feed_dict_ge
+                        )
+                        summary_writer.add_summary(g_summary, counter)
+                        summary_writer.add_summary(e_summary, counter)
 
                         all_log_vals.append(log_vals)
                         counter += 1
@@ -293,8 +321,8 @@ class ConInfoGANTrainer(object):
                                  self.embeddings: embeddings,
                                  self.z_noise_c_var: z1,
                                  self.z_noise: z2}
-                    summary_str = sess.run(summary_op, feed_dict)
-                    summary_writer.add_summary(summary_str, counter)
+                    epoch_image_summary = sess.run(self.image_summary, feed_dict)
+                    summary_writer.add_summary(epoch_image_summary, counter)
 
                     avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
                     # log_dict = dict(zip(log_keys, avg_log_vals))
