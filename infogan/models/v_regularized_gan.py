@@ -45,9 +45,8 @@ class ConRegularizedGAN(object):
         self.image_shape = image_shape
         if network_type == "flower":
             with tf.variable_scope("d_net"):
-                d_template, e_template, con_template, feature_template = self.discriminator()
+                d_template, con_template, feature_template = self.discriminator()
                 self.discriminator_template = d_template
-                self.encoder_template = e_template
                 self.context_encoder_template = con_template
                 self.feature_template = feature_template
             with tf.variable_scope("g_net"):
@@ -79,29 +78,22 @@ class ConRegularizedGAN(object):
              apply(leaky_rectify).
              custom_conv2d(self.df_dim * 8, k_h=4, k_w=4)
              )
+
         shared_template = \
             (feature_template.
              conv_batch_norm().
              apply(leaky_rectify))
+
         discriminator_template = shared_template.custom_fully_connected(1)
-        if self.reg_latent_dist.dist_flat_dim > 0:
-            encoder_template = \
-                (shared_template.
-                 custom_fully_connected(128).
-                 fc_batch_norm().
-                 apply(leaky_rectify).
-                 custom_fully_connected(self.reg_latent_dist.dist_flat_dim))
-        else:
-            encoder_template = None
+
         context_encoder_template = \
             (shared_template.
              custom_fully_connected(self.ef_dim * 2).
              fc_batch_norm().
              apply(leaky_rectify).
-             # self.con_latent_dist.dist_flat_dim = 2 * ef_dim for gaussian
              custom_fully_connected(self.ef_dim))
-        return (discriminator_template, encoder_template,
-                context_encoder_template, feature_template)
+
+        return (discriminator_template, context_encoder_template, feature_template)
 
     def generator(self):
         s = self.image_size
@@ -124,42 +116,10 @@ class ConRegularizedGAN(object):
              custom_deconv2d([0] + list(self.image_shape), k_h=4, k_w=4))
         return generator_template
 
-    def discriminate_old(self, x_var):
-        d_out = self.discriminator_template.construct(input=x_var)
-        d = tf.nn.sigmoid(d_out[:, 0])
-        reg_dist_flat = self.encoder_template.construct(input=x_var)
-        reg_dist_info = self.reg_latent_dist.activate_dist(reg_dist_flat)
-        return d, self.reg_latent_dist.sample(reg_dist_info), reg_dist_info, reg_dist_flat
-
-    def generate_old(self, z_var):
-        x_dist_flat = self.generator_template.construct(input=z_var)
-        x_dist_info = self.output_dist.activate_dist(x_dist_flat)
-        return self.output_dist.sample(x_dist_info), x_dist_info
-
-    """
-    def discriminate(self, x_var):
-        d_out = self.discriminator_template.construct(input=x_var)
-        d = tf.nn.sigmoid(d_out[:, 0])
-        con_dist_flat = self.context_encoder_template.construct(input=x_var)
-        con_dist_info = self.con_latent_dist.activate_dist(con_dist_flat)
-        if self.reg_latent_dist.dist_flat_dim > 0:
-            reg_dist_flat = self.encoder_template.construct(input=x_var)
-            reg_dist_info = self.reg_latent_dist.activate_dist(reg_dist_flat)
-            return (d, self.reg_latent_dist.sample(reg_dist_info), reg_dist_info,
-                    reg_dist_flat, self.con_latent_dist.sample(con_dist_info),
-                    con_dist_info, con_dist_flat)
-        else:
-            reg_dist_flat = None
-            reg_dist_info = None
-            return (d, None, reg_dist_info,
-                    reg_dist_flat, self.con_latent_dist.sample(con_dist_info),
-                    con_dist_info, con_dist_flat)
-    """
     def discriminate(self, x_var):
         d_out = self.discriminator_template.construct(input=x_var)
         f_out = self.feature_template.construct(input=x_var)
-        # e_out = self.context_encoder_template.construct(input=x_var)
-        return d_out, f_out  # , e_out
+        return d_out, f_out
 
     def generate(self, z_var):
         x_dist = self.generator_template.construct(input=z_var)
