@@ -13,8 +13,8 @@ import dateutil.tz
 import datetime
 
 if __name__ == "__main__":
-    dataset_name = 'flowers'
-    # dataset_name = 'birds'
+    # dataset_name = 'flowers'
+    dataset_name = 'birds'
 
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     batch_size = 256
     updates_per_epoch = 50
-    max_epoch = 1000
+    max_epoch = 2000
     embedding_dim = 100
 
     exp_name = "%s_%s" % (dataset_name, timestamp)
@@ -70,9 +70,7 @@ if __name__ == "__main__":
         max_epoch=max_epoch,
         updates_per_epoch=updates_per_epoch,
         info_reg_coeff=1.0,
-        con_info_reg_coeff=1.0,
-        generator_learning_rate=1e-3,
-        discriminator_learning_rate=2e-4,
+        con_info_reg_coeff=1.0
     )
 
     algo.train()
