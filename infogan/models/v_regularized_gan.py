@@ -9,7 +9,7 @@ from infogan.misc.custom_ops import leaky_rectify
 
 class ConRegularizedGAN(object):
     def __init__(self, output_dist, latent_spec, con_latent_spec, batch_size,
-                 image_shape, network_type, gf_dim=64, df_dim=64, ef_dim=1024):
+                 image_shape, text_dim, network_type, gf_dim=64, df_dim=64, ef_dim=100):
         """
         :type output_dist: Distribution e.g. MeanBernoulli(dataset.image_dim),
         :type latent_spec: list[(Distribution, bool)]
@@ -33,6 +33,7 @@ class ConRegularizedGAN(object):
         self.batch_size = batch_size
         self.network_type = network_type
         self.image_shape = image_shape
+        self.text_dim = text_dim
         self.gf_dim = gf_dim
         self.df_dim = df_dim
         self.ef_dim = ef_dim
@@ -45,14 +46,16 @@ class ConRegularizedGAN(object):
         self.image_shape = image_shape
         if network_type == "flower":
             with tf.variable_scope("d_net"):
-                d_template, con_template, feature_template = self.discriminator()
-                self.discriminator_template = d_template
-                self.context_encoder_template = con_template
-                self.feature_template = feature_template
+                self.shared_template = self.discriminator_shared()
+                self.discriminator_notshared_template = self.discriminator_notshared()
             with tf.variable_scope("g_net"):
                 self.generator_template = self.generator()
             with tf.variable_scope("c_net"):
                 self.context_template = self.context_embedding()
+                # Change by TX (4)
+                self.feature_template = self.feature_extractor()
+                self.context_reconstruct_template = self.context_reconstruction()
+                # **********
         else:
             raise NotImplementedError
 
@@ -64,8 +67,8 @@ class ConRegularizedGAN(object):
                     custom_fully_connected(self.ef_dim * 2))
         return template
 
-    def discriminator(self):
-        feature_template = \
+    def discriminator_shared(self):
+        last_conv_template = \
             (pt.template("input").
              custom_conv2d(self.df_dim, k_h=4, k_w=4).
              conv_batch_norm().
@@ -78,22 +81,52 @@ class ConRegularizedGAN(object):
              apply(leaky_rectify).
              custom_conv2d(self.df_dim * 8, k_h=4, k_w=4)
              )
+        shared_template = last_conv_template
+        return shared_template
 
-        shared_template = \
-            (feature_template.
+    def discriminator_notshared(self):
+        # ####Use shared_template from discriminator as input
+        discriminator_template = \
+            (pt.template("input").
              conv_batch_norm().
-             apply(leaky_rectify))
-
-        discriminator_template = shared_template.custom_fully_connected(1)
-
-        context_encoder_template = \
-            (shared_template.
-             custom_fully_connected(self.ef_dim * 2).
-             fc_batch_norm().
              apply(leaky_rectify).
-             custom_fully_connected(self.ef_dim))
+             custom_fully_connected(1))
 
-        return (discriminator_template, context_encoder_template, feature_template)
+        return discriminator_template
+
+    def feature_extractor(self):
+        # Change by TX (3)
+        # ####Use shared_template from discriminator as input
+
+        # ####Extract middle-level conv features with spatial information ####
+        feature_template = pt.template("input")
+
+        '''
+        # ####Extract high-level fc layer features
+        # Not work <-- because the most trival solution for this branch is 0 ####
+        feature_template = \
+            (pt.template("input").
+             conv_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(self.df_dim * 16))
+        '''
+        return feature_template
+
+    def context_reconstruction(self):
+        # Change by TX (4)
+        # ####Use shared_template from discriminator as input
+        reconstruct_template = \
+            (pt.template("input").
+             conv_batch_norm().
+             apply(leaky_rectify).
+             # custom_fully_connected(self.ef_dim * 2).
+             # fc_batch_norm().
+             # apply(leaky_rectify).
+             # custom_fully_connected(self.ef_dim * 4).
+             # fc_batch_norm().
+             # apply(leaky_rectify).
+             custom_fully_connected(self.text_dim))
+        return reconstruct_template
 
     def generator(self):
         s = self.image_size
@@ -113,17 +146,9 @@ class ConRegularizedGAN(object):
              custom_deconv2d([0, s2, s2, self.gf_dim], k_h=4, k_w=4).
              conv_batch_norm().
              apply(tf.nn.relu).
-             custom_deconv2d([0] + list(self.image_shape), k_h=4, k_w=4))
+             custom_deconv2d([0] + list(self.image_shape), k_h=4, k_w=4).
+             apply(tf.nn.tanh))
         return generator_template
-
-    def discriminate(self, x_var):
-        d_out = self.discriminator_template.construct(input=x_var)
-        f_out = self.feature_template.construct(input=x_var)
-        return d_out, f_out
-
-    def generate(self, z_var):
-        x_dist = self.generator_template.construct(input=z_var)
-        return tf.nn.tanh(x_dist)
 
     def generate_for_visualization(self, image_num, embedding_shape):
         embeddings = tf.placeholder(
@@ -142,6 +167,21 @@ class ConRegularizedGAN(object):
         log_sigma = conditions[:, self.ef_dim:]
         condition_list = [mean, log_sigma]
         return condition_list
+
+    def get_discriminator_shared(self, x_var):
+        return self.shared_template.construct(input=x_var)
+
+    def extract_features(self, shared_layers):
+        return self.feature_template.construct(input=shared_layers)
+
+    def reconstuct_context(self, shared_layers):
+        return self.context_reconstruct_template.construct(input=shared_layers)
+
+    def get_discriminator(self, shared_layers):
+        return self.discriminator_notshared_template.construct(input=shared_layers)
+
+    def get_generator(self, z_var):
+        return self.generator_template.construct(input=z_var)
 
     def disc_reg_z(self, reg_z_var):
         ret = []

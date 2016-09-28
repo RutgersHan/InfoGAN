@@ -13,8 +13,8 @@ import dateutil.tz
 import datetime
 
 if __name__ == "__main__":
-    dataset_name = 'flowers'
-    # dataset_name = 'birds'
+    # dataset_name = 'flowers'
+    dataset_name = 'birds'
 
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
@@ -55,6 +55,7 @@ if __name__ == "__main__":
         con_latent_spec=con_latent_spec,
         batch_size=batch_size,
         image_shape=dataset.image_shape,
+        text_dim=dataset.embedding_shape[0],
         network_type="flower",
         ef_dim=embedding_dim
     )
