@@ -49,7 +49,7 @@ class ConInfoGANTrainer(object):
                  info_reg_coeff=1.0,
                  con_info_reg_coeff=1.0,
                  discriminator_learning_rate=2e-4,
-                 generator_learning_rate=2e-4,
+                 generator_learning_rate=1e-3,  # 2e-4,
                  encoder_learning_rate=2e-4
                  ):
         """
@@ -73,6 +73,7 @@ class ConInfoGANTrainer(object):
         self.discriminator_trainer = None
         self.generator_trainer = None
         self.images = None
+        self.masks = None
         self.embeddings = None
         self.log_vars = []
 
@@ -80,6 +81,9 @@ class ConInfoGANTrainer(object):
         self.images = tf.placeholder(
             tf.float32, [self.batch_size] + self.dataset.image_shape,
             name='real_images')
+        self.masks = tf.placeholder(
+            tf.float32, [self.batch_size] + self.dataset.image_shape[:2],
+            name='real_masks')
         self.embeddings = tf.placeholder(
             tf.float32, [self.batch_size] + self.dataset.embedding_shape,
             name='conditional_embeddings'
@@ -92,8 +96,12 @@ class ConInfoGANTrainer(object):
             tf.float32, [self.batch_size] + [self.model.ef_dim],
             name='sample_c_var'
         )
+        self.z_bg = tf.placeholder(
+            tf.float32, [self.batch_size] + [self.model.ef_dim],
+            name='background_noise'
+        )
 
-        recon_vs_gan = 1.0  # 1e-6
+        recon_vs_gan = 5.0  # 1.0  # 1e-6
 
         with pt.defaults_scope(phase=pt.Phase.train):
             c_var = self.model.generate_condition(self.embeddings)
@@ -103,8 +111,8 @@ class ConInfoGANTrainer(object):
             kl_loss = KL_loss(c_var[0], c_var[1])
             z_c_var = c_var[0] + c_var[1] * self.z_noise_c_var
 
-            fake_x = self.model.get_generator(z_c_var)
-            noise_x = self.model.get_generator(self.z_noise)
+            fake_x = self.model.get_generator(tf.concat(1, [z_c_var, self.z_bg]))
+            noise_x = self.model.get_generator(tf.concat(1, [self.z_noise, self.z_bg]))
 
             # Change by TX (4)
             real_shared_layers = self.model.get_discriminator_shared(self.images)
@@ -115,13 +123,17 @@ class ConInfoGANTrainer(object):
             fake_d = self.model.get_discriminator(fake_shared_layers)
             noise_d = self.model.get_discriminator(noise_shared_layers)
 
+            # #####Like loss####################
+            # masks = tf.to_float(tf.expand_dims(self.masks, 3))
+            real_masked_x = tf.mul(self.images, tf.expand_dims(self.masks, 3))
+            fake_masked_x = tf.mul(fake_x, tf.expand_dims(self.masks, 3))
             # ##like loss based on element-wise distance between real and fake images##
-            like_loss = tf.reduce_mean(tf.square(self.images - fake_x)) / 2.
+            # like_loss = tf.reduce_mean(tf.square(real_masked_x - fake_masked_x)) / 2.
 
             # ##like loss based on feature distance between real and fake images##
-            # real_f = self.model.extract_features(real_shared_layers)
-            # fake_f = self.model.extract_features(fake_shared_layers)
-            # like_loss = tf.reduce_mean(tf.square(real_f - fake_f)) / 2.
+            real_f = self.model.extract_features(self.model.get_discriminator_shared(real_masked_x))
+            fake_f = self.model.extract_features(self.model.get_discriminator_shared(fake_masked_x))
+            like_loss = tf.reduce_mean(tf.square(real_f - fake_f)) / 2.
 
             # ##like loss based on distance between text embedding and reconstructed embedding##
             # real_t = self.model.reconstuct_context(real_shared_layers)
@@ -218,11 +230,15 @@ class ConInfoGANTrainer(object):
                 self.visualization()
                 print("success")
 
-    def visualize_one_superimage(self, img_var, images, rows, filename):
+    def visualize_one_superimage(self, img_var, images, masks, rows, filename):
+        # masks = tf.to_float(masks)
+        # img_var = (img_var + 1.) / 2.
+        # images = (images + 1.) / 2.
         stacked_img = []
         for row in range(rows):
-            row_img = []
-            row_img.append(images[row * rows, :, :, :])  # real image
+            img = images[row * rows, :, :, :]
+            masked_img = tf.mul(img, masks[row * rows, :, :, :])
+            row_img = [img, masked_img]  # real image and masked images
             for col in range(rows):
                 row_img.append(img_var[row * rows + col, :, :, :])
             # each rows is 1realimage +10_fakeimage
@@ -235,12 +251,21 @@ class ConInfoGANTrainer(object):
     def visualization(self):
         c_var = self.model.generate_condition(self.embeddings)
         z_c_var = c_var[0] + c_var[1] * self.z_noise_c_var
-        img_c_var = self.model.get_generator(z_c_var)
-        img_sum1 = self.visualize_one_superimage(img_c_var[:64, :, :, :], self.images[:64, :, :, :], 8, "train_image_on_text")
-        img_sum2 = self.visualize_one_superimage(img_c_var[64:128, :, :, :], self.images[64:128, :, :, :], 8, "test_image_on_text")
+        img_c_var = self.model.get_generator(tf.concat(1, [z_c_var, self.z_bg]))
+        img_sum1 = self.visualize_one_superimage(img_c_var[:64, :, :, :],
+                                                 self.images[:64, :, :, :],
+                                                 tf.expand_dims(self.masks[:64, :, :], 3),
+                                                 8, "train_image_on_text")
+        img_sum2 = self.visualize_one_superimage(img_c_var[64:128, :, :, :],
+                                                 self.images[64:128, :, :, :],
+                                                 tf.expand_dims(self.masks[64:128, :, :], 3),
+                                                 8, "test_image_on_text")
 
-        img_noise = self.model.get_generator(self.z_noise)
-        img_sum3 = self.visualize_one_superimage(img_noise[:64, :, :, :], self.images[:64, :, :, :], 8, "image_on_noise")
+        img_noise = self.model.get_generator(tf.concat(1, [self.z_noise, self.z_bg]))
+        img_sum3 = self.visualize_one_superimage(img_noise[:64, :, :, :],
+                                                 self.images[:64, :, :, :],
+                                                 tf.expand_dims(self.masks[:64, :, :], 3),
+                                                 8, "image_on_noise")
         self.image_summary = tf.merge_summary([img_sum1, img_sum2, img_sum3])
 
     def preprocess(self, embeddings):
@@ -255,13 +280,10 @@ class ConInfoGANTrainer(object):
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
             with tf.device("/gpu:1"):
                 self.init_opt()
-                init = tf.initialize_all_variables()
-                sess.run(init)
-
                 # summary_op = tf.merge_all_summaries()
                 summary_writer = tf.train.SummaryWriter(self.log_dir, sess.graph)
 
-                saver = tf.train.Saver()
+                saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=2)
 
                 if self.model_path:
                     print("Reading model parameters from %s" % self.model_path)
@@ -292,13 +314,17 @@ class ConInfoGANTrainer(object):
                     for i in range(self.updates_per_epoch):
                         pbar.update(i)
                         # training d
-                        images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
+                        images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
+                        # print(type(masks), masks.shape)
                         z1 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                         z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+                        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                         feed_dict_d = {self.images: images,
+                                       self.masks: masks.astype(np.float32),
                                        self.embeddings: embeddings,
                                        self.z_noise_c_var: z1,
-                                       self.z_noise: z2}
+                                       self.z_noise: z2,
+                                       self.z_bg: z_bg}
                         _, d_summary, log_vals, condition_vals, other_summary = sess.run(
                             [self.discriminator_trainer, self.d_sum,
                              log_vars, condition_var, self.other_sum], feed_dict_d)
@@ -306,13 +332,16 @@ class ConInfoGANTrainer(object):
                         summary_writer.add_summary(d_summary, counter)
                         summary_writer.add_summary(other_summary, counter)
                         # training g&e
-                        images, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
+                        images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         z1 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                         z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+                        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                         feed_dict_ge = {self.images: images,
+                                        self.masks: masks.astype(np.float32),
                                         self.embeddings: embeddings,
                                         self.z_noise_c_var: z1,
-                                        self.z_noise: z2}
+                                        self.z_noise: z2,
+                                        self.z_bg: z_bg}
                         # Change by TX (2)
                         # _, g_summary, e_summary = sess.run(
                         #    [self.generator_trainer, self.g_sum, self.e_sum], feed_dict_ge
@@ -335,28 +364,33 @@ class ConInfoGANTrainer(object):
                             fn = saver.save(sess, "%s/%s.ckpt" % (self.checkpoint_dir, snapshot_name))
                             print("Model saved in file: %s" % fn)
 
-                    images_train, embeddings_train, _ = self.dataset.train.next_batch(64)
+                    images_train, masks_train, embeddings_train, _ = self.dataset.train.next_batch(64)
                     embeddings_train = self.preprocess(embeddings_train)
 
-                    images_test, embeddings_test, _ = self.dataset.test.next_batch(64)
+                    images_test, masks_test, embeddings_test, _ = self.dataset.test.next_batch(64)
                     embeddings_test = self.preprocess(embeddings_test)
 
                     images = np.concatenate([images_train, images_test], axis=0)
+                    masks = np.concatenate([masks_train, masks_test], axis=0)
                     embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
 
                     z1 = np.tile(np.random.normal(0., 1., (8, self.model.ef_dim)), [16, 1])
                     z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+                    z_bg = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                     if self.batch_size > 128:
                         z_pad = np.random.normal(0., 1., (self.batch_size - 128, self.model.ef_dim))
                         z1 = np.concatenate([z1, z_pad], axis=0)
-                        images_pad, embeddings_pad, _ = self.dataset.test.next_batch(self.batch_size - 128)
+                        images_pad, masks_pad, embeddings_pad, _ = self.dataset.test.next_batch(self.batch_size - 128)
                         images = np.concatenate([images, images_pad], axis=0)
+                        masks = np.concatenate([masks, masks_pad], axis=0)
                         embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
 
                     feed_dict = {self.images: images,
+                                 self.masks: masks.astype(np.float32),
                                  self.embeddings: embeddings,
                                  self.z_noise_c_var: z1,
-                                 self.z_noise: z2}
+                                 self.z_noise: z2,
+                                 self.z_bg: z_bg}
                     epoch_image_summary = sess.run(self.image_summary, feed_dict)
                     summary_writer.add_summary(epoch_image_summary, counter)
 

@@ -10,6 +10,7 @@ import os
 import pickle
 from utils import get_image, colorize
 import scipy.misc
+import scipy.io as sio
 
 # from glob import glob
 
@@ -108,6 +109,20 @@ def convert_flowers_dataset_tf(data_dir, train_ratio=0.75):
     writer.close()
 
 
+def load_mask(data_dir):
+    filenames_masks = sio.loadmat(os.path.join(data_dir, 'mask_cropped.mat'))
+    filenames = filenames_masks['filenames']
+    masks = filenames_masks['masks']
+    print(type(filenames[0][0]), type(filenames[0][0][0]), filenames[0][0][0])
+    print(type(masks[0][0]), masks[0][0].shape)
+
+    mask_dic = {}
+    for i in range(len(filenames)):
+        key = filenames[i][0][0]
+        data = masks[i][0]
+        mask_dic[key] = data
+    return mask_dic
+
 def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
     h = h5py.File(os.path.join(data_dir, 'bird_tv.hdf5'))
 
@@ -142,6 +157,7 @@ def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
     masks = []
     embeddings = []
     labels = []
+
     if btrain:
         class_list = training_class_list
         # segmented image_mask
@@ -149,12 +165,16 @@ def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
     else:
         class_list = test_class_list
         outfile = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'image_mask' + '_test.pickle')
+    filename_mask_dic = load_mask(data_dir)
 
     for i, c in enumerate(class_list):
         for j, f in enumerate(image_lists[c]):
-            mask_name = os.path.join(data_dir, 'mask_cropped', f)
             # ####mask only has 0/1 values
-            mask = scipy.misc.imresize(scipy.misc.imread(mask_name), [IMSIZE, IMSIZE])
+            mask = filename_mask_dic[f]
+            mask = scipy.misc.imresize(mask, [IMSIZE, IMSIZE])
+            # print(f, mask, np.sum(mask))
+            # print(type(mask), mask.shape)
+            # return
             masks.append(mask)
             f_name = os.path.join(data_dir, 'images_cropped', f)
 

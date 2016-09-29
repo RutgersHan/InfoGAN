@@ -19,9 +19,10 @@ if __name__ == "__main__":
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
 
-    root_log_dir = "logs/" + dataset_name
-    root_checkpoint_dir = "ckt/" + dataset_name
-    pretrained_model = None  # "ckt/%s/flower_2016_09_25_20_22_49/flower_2016_09_25_20_22_49_12000.ckpt" % dataset_name
+    # root_log_dir = "logs/" + dataset_name
+    # root_checkpoint_dir = "ckt/" + dataset_name
+    root_log_dir = "ckt_logs/" + dataset_name
+    pretrained_model = "%s/birds_2016_09_29_10_22_42/birds_2016_09_29_10_22_42_10000.ckpt" % root_log_dir
 
     batch_size = 256
     updates_per_epoch = 50
@@ -31,14 +32,15 @@ if __name__ == "__main__":
     exp_name = "%s_%s" % (dataset_name, timestamp)
 
     log_dir = os.path.join(root_log_dir, exp_name)
-    checkpoint_dir = os.path.join(root_checkpoint_dir, exp_name)
+    checkpoint_dir = log_dir
+    # checkpoint_dir = os.path.join(root_checkpoint_dir, exp_name)
 
     mkdir_p(log_dir)
-    mkdir_p(checkpoint_dir)
+    # mkdir_p(checkpoint_dir)
 
     dataset = FlowerDataset()
-    dataset.train = dataset.get_data('Data/%s/%s64segmented_train.pickle' % (dataset_name, dataset_name))
-    dataset.test = dataset.get_data('Data/%s/%s64segmented_test.pickle' % (dataset_name, dataset_name))
+    dataset.train = dataset.get_data('Data/%s/%s64image_mask_train.pickle' % (dataset_name, dataset_name))
+    dataset.test = dataset.get_data('Data/%s/%s64image_mask_test.pickle' % (dataset_name, dataset_name))
 
     latent_spec = [
         (Uniform(64), False),

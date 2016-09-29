@@ -9,8 +9,9 @@ import random
 
 
 class Dataset(object):
-    def __init__(self, images, embeddings, labels=None, flip_flag=True):
+    def __init__(self, images, masks, embeddings, labels=None, flip_flag=True):
         self._images = images
+        self._masks = masks
         self._labels = labels
         self._embeddings = embeddings
         self._epochs_completed = -1
@@ -70,6 +71,7 @@ class Dataset(object):
             perm = np.arange(self._num_examples)
             np.random.shuffle(perm)
             self._images = self._images[perm]
+            self._masks = self._masks[perm]
             self._embeddings = self._embeddings[perm]
             if self._labels is not None:
                 self._labels = self._labels[perm]
@@ -79,14 +81,15 @@ class Dataset(object):
             assert batch_size <= self._num_examples
         end = self._index_in_epoch
         # if the input image has values in [0, 255], use this self.transform()
-        # transformed_images = self.transform(self._images[start:end])
-        transformed_images = self._images[start:end]
+        # sampled_images = self.transform(self._images[start:end])
+        sampled_images = self._images[start:end]
+        sampled_masks = self._masks[start:end]
         sampled_embeddings = self.sample_embeddings(
             self._embeddings[start:end])
         if self._labels is None:
-            return transformed_images, sampled_embeddings, None
+            return sampled_images, sampled_masks, sampled_embeddings, None
         else:
-            return (transformed_images, sampled_embeddings,
+            return (sampled_images, sampled_masks, sampled_embeddings,
                     self._labels[start:end])
 
 
@@ -99,14 +102,18 @@ class FlowerDataset(object):
         with open(pickle_path, 'rb') as f:
             # images value in [-1, 1]
             height, width, depth, embedding_num, \
-                images, embeddings, labels = pickle.load(f)
+                images, masks, embeddings, labels = pickle.load(f)
             array_images = np.array([image for image in images])
+            array_masks = np.array([mask for mask in masks])
             array_labels = np.array([label for label in labels])
             array_embeddings = np.array([
                 embedding for embedding in embeddings])
-
+            # print(type(masks), len(masks))
+            # print(type(array_masks), array_masks.shape)
+            # print(type(array_masks[0]), array_masks[0].shape)
+            # return
             self.image_dim = height * width * depth
             self.image_shape = [height, width, depth]
             self.embedding_shape = [array_embeddings.shape[-1]]
             # self.train = Dataset(array_images, array_embeddings, array_labels)
-            return Dataset(array_images, array_embeddings, array_labels)
+            return Dataset(array_images, array_masks, array_embeddings, array_labels)
