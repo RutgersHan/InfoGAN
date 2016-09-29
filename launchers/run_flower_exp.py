@@ -37,8 +37,8 @@ if __name__ == "__main__":
     mkdir_p(checkpoint_dir)
 
     dataset = FlowerDataset()
-    dataset.train = dataset.get_data('Data/%s/%s64train.pickle' % (dataset_name, dataset_name))
-    dataset.test = dataset.get_data('Data/%s/%s64test.pickle' % (dataset_name, dataset_name))
+    dataset.train = dataset.get_data('Data/%s/%s64segmented_train.pickle' % (dataset_name, dataset_name))
+    dataset.test = dataset.get_data('Data/%s/%s64segmented_test.pickle' % (dataset_name, dataset_name))
 
     latent_spec = [
         (Uniform(64), False),

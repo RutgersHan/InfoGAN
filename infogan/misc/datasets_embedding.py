@@ -40,6 +40,7 @@ class Dataset(object):
         return self._epochs_completed
 
     def transform(self, images):
+        # if the input image has values in [0, 255], use this function
         images = images.astype(np.float32) * (2. / 255) - 1.
         transformed_images = np.zeros_like(images)
         for i in range(images.shape[0]):
@@ -77,7 +78,9 @@ class Dataset(object):
             self._index_in_epoch = batch_size
             assert batch_size <= self._num_examples
         end = self._index_in_epoch
-        transformed_images = self.transform(self._images[start:end])
+        # if the input image has values in [0, 255], use this self.transform()
+        # transformed_images = self.transform(self._images[start:end])
+        transformed_images = self._images[start:end]
         sampled_embeddings = self.sample_embeddings(
             self._embeddings[start:end])
         if self._labels is None:
@@ -94,6 +97,7 @@ class FlowerDataset(object):
 
     def get_data(self, pickle_path, flip_flag=True):
         with open(pickle_path, 'rb') as f:
+            # images value in [-1, 1]
             height, width, depth, embedding_num, \
                 images, embeddings, labels = pickle.load(f)
             array_images = np.array([image for image in images])

@@ -9,6 +9,8 @@ import h5py
 import os
 import pickle
 from utils import get_image, colorize
+import scipy.misc
+
 # from glob import glob
 
 # TODO: 1. current label is temporary, need to change according to real label
@@ -79,12 +81,15 @@ def convert_flowers_dataset_tf(data_dir, train_ratio=0.75):
     writer = tf.python_io.TFRecordWriter(outfile)
     for i, f in enumerate(training_image_list):
         f_name = os.path.join(data_dir, 'jpg', f)
+
+        # [-1, 1]
         image = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
         image = colorize(image)
         assert image.shape == (IMSIZE, IMSIZE, 3)
-        image += 1.
-        image *= (255. / 2.)
-        image = image.astype('uint8')
+        # ##Convert image to [0, 255]
+        # image += 1.
+        # image *= (255. / 2.)
+        # image = image.astype('uint8')
 
         image_raw = image.tostring()
         embedding = flower_captions[f]
@@ -117,7 +122,7 @@ def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
             filename = ds2[0]
             image_path = os.path.join(class_name, filename)
             captions[image_path] = np.array(ds2[1])
-            #print(captions[image_path][:10])
+            # print(captions[image_path][:10])
             image_lists[class_name].append(image_path)
 
     class_list.sort()
@@ -127,25 +132,45 @@ def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
     test_class_list = class_list[training_num:]
     print(len(training_class_list), len(test_class_list))
 
+    btrain = 1
+
     height = IMSIZE
     width = IMSIZE
     depth = 3
     embedding_num = 10
     images = []
+    masks = []
     embeddings = []
     labels = []
-    for i, c in enumerate(training_class_list):
-        for j, f in enumerate(image_lists[c]):
-            f_name = os.path.join(data_dir, 'jpg', f)
-            # print(f_name)
+    if btrain:
+        class_list = training_class_list
+        # segmented image_mask
+        outfile = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'image_mask' + '_train.pickle')
+    else:
+        class_list = test_class_list
+        outfile = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'image_mask' + '_test.pickle')
 
+    for i, c in enumerate(class_list):
+        for j, f in enumerate(image_lists[c]):
+            mask_name = os.path.join(data_dir, 'mask_cropped', f)
+            # ####mask only has 0/1 values
+            mask = scipy.misc.imresize(scipy.misc.imread(mask_name), [IMSIZE, IMSIZE])
+            masks.append(mask)
+            f_name = os.path.join(data_dir, 'images_cropped', f)
+
+            # f_name = os.path.join(data_dir, 'segmented_images_cropped', f)
+
+            # print(f_name)
+            # ####[-1, 1]
             image = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
             image = colorize(image)
-
+            # print(image)
             assert image.shape == (IMSIZE, IMSIZE, 3)
-            image += 1.
-            image *= (255. / 2.)
-            image = image.astype('uint8')
+            # ######Convert image to [0, 255]
+            # image += 1.
+            # image *= (255. / 2.)
+            # image = image.astype('uint8')
+
             embedding = captions[f]
             # print(f)
             # print(embedding)
@@ -156,15 +181,13 @@ def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
             embeddings.append(embedding)
             labels.append(label)
 
-    outfile_train = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'train.pickle')
-    outfile_test = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'test.pickle')
-    with open(outfile_train, 'wb') as f_out:
-        pickle.dump([height, width, depth, embedding_num, images,
+    with open(outfile, 'wb') as f_out:
+        pickle.dump([height, width, depth, embedding_num, images, masks,
                      embeddings, labels], f_out)
 
 
 if __name__ == '__main__':
     # convert_flowers_dataset_pickle(FLOWER_DIR)
     # convert_flowers_dataset_tf(FLOWER_DIR)
-    #convert_flowers_test_dataset_pickle(FLOWER_DIR)
+    # convert_flowers_test_dataset_pickle(FLOWER_DIR)
     convert_birds_dataset_pickle(BIRD_DIR)

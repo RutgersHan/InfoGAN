@@ -27,6 +27,11 @@ def KL_loss(mu, log_sigma):
     with tf.name_scope("KL_divergence"):
         loss = tf.reduce_mean(-log_sigma + .5 * (-1 + tf.exp(2. * log_sigma) + tf.square(mu)))
         return loss
+def cosine_loss(vector1, vector2):
+    normed_v1 = tf.nn.l2_norm(vector1, 1)
+    normed_v2 = tf.nn.l2_norm(vector2, 1)
+    return tf.contrib.losses.cosine_distance(normed_v1, normed_v2)
+
 
 
 class ConInfoGANTrainer(object):
@@ -88,7 +93,7 @@ class ConInfoGANTrainer(object):
             name='sample_c_var'
         )
 
-        recon_vs_gan = 1e-6
+        recon_vs_gan = 1.0  # 1e-6
 
         with pt.defaults_scope(phase=pt.Phase.train):
             c_var = self.model.generate_condition(self.embeddings)
@@ -110,16 +115,20 @@ class ConInfoGANTrainer(object):
             fake_d = self.model.get_discriminator(fake_shared_layers)
             noise_d = self.model.get_discriminator(noise_shared_layers)
 
+            # ##like loss based on element-wise distance between real and fake images##
+            like_loss = tf.reduce_mean(tf.square(self.images - fake_x)) / 2.
+
             # ##like loss based on feature distance between real and fake images##
             # real_f = self.model.extract_features(real_shared_layers)
             # fake_f = self.model.extract_features(fake_shared_layers)
             # like_loss = tf.reduce_mean(tf.square(real_f - fake_f)) / 2.
+
             # ##like loss based on distance between text embedding and reconstructed embedding##
-            real_t = self.model.reconstuct_context(real_shared_layers)
-            fake_t = self.model.reconstuct_context(fake_shared_layers)
-            real_like = tf.reduce_mean(tf.square(real_t - self.embeddings)) / 2.
-            fake_like = tf.reduce_mean(tf.square(fake_t - self.embeddings)) / 2.
-            like_loss = 100. * (real_like + fake_like) / 2.
+            # real_t = self.model.reconstuct_context(real_shared_layers)
+            # fake_t = self.model.reconstuct_context(fake_shared_layers)
+            # real_like = tf.reduce_mean(tf.square(real_t - self.embeddings)) / 2.
+            # fake_like = tf.reduce_mean(tf.square(fake_t - self.embeddings)) / 2.
+            # like_loss = 100. * (real_like + fake_like) / 2.
             # **********
 
             d_loss_legit = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d, tf.ones_like(real_d)))
@@ -135,8 +144,8 @@ class ConInfoGANTrainer(object):
             g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_d, tf.ones_like(fake_d)))
             g_loss2 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(noise_d, tf.ones_like(noise_d)))
             # Change by TX (1)
-            # g_loss = g_loss1 + g_loss2 + recon_vs_gan * like_loss
-            g_loss = (g_loss1 + g_loss2) / 2.
+            g_loss = g_loss1 + g_loss2 + recon_vs_gan * like_loss
+            # g_loss = (g_loss1 + g_loss2) / 2.
             # **********
             generator_loss = g_loss
 
@@ -180,12 +189,12 @@ class ConInfoGANTrainer(object):
 
             # Change by TX (2)
             generator_optimizer = tf.train.AdamOptimizer(self.generator_learning_rate, beta1=0.5)
-            self.generator_trainer = pt.apply_optimizer(generator_optimizer, losses=[generator_loss + encoder_loss],
-                                                        var_list=g_vars + e_vars)
-            # self.generator_trainer = pt.apply_optimizer(generator_optimizer, losses=[generator_loss], var_list=g_vars)
+            # self.generator_trainer = pt.apply_optimizer(generator_optimizer, losses=[generator_loss + encoder_loss],
+            #                                             var_list=g_vars + e_vars)
+            self.generator_trainer = pt.apply_optimizer(generator_optimizer, losses=[generator_loss], var_list=g_vars)
 
-            # encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
-            # self.encoder_trainer = pt.apply_optimizer(encoder_optimizer, losses=[encoder_loss], var_list=e_vars)
+            encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
+            self.encoder_trainer = pt.apply_optimizer(encoder_optimizer, losses=[encoder_loss], var_list=e_vars)
             # ****************************
 
             all_sum = {}
@@ -244,7 +253,7 @@ class ConInfoGANTrainer(object):
 
     def train(self):
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-            with tf.device("/gpu:0"):
+            with tf.device("/gpu:1"):
                 self.init_opt()
                 init = tf.initialize_all_variables()
                 sess.run(init)
@@ -305,15 +314,15 @@ class ConInfoGANTrainer(object):
                                         self.z_noise_c_var: z1,
                                         self.z_noise: z2}
                         # Change by TX (2)
-                        _, g_summary, e_summary = sess.run(
-                            [self.generator_trainer, self.g_sum, self.e_sum], feed_dict_ge
+                        # _, g_summary, e_summary = sess.run(
+                        #    [self.generator_trainer, self.g_sum, self.e_sum], feed_dict_ge
+                        # )
+                        _, g_summary = sess.run(
+                            [self.generator_trainer, self.g_sum], feed_dict_ge
                         )
-                        # _, g_summary = sess.run(
-                        #     [self.generator_trainer, self.g_sum], feed_dict_ge
-                        # )
-                        # _, e_summary = sess.run(
-                        #     [self.encoder_trainer, self.e_sum], feed_dict_ge
-                        # )
+                        _, e_summary = sess.run(
+                            [self.encoder_trainer, self.e_sum], feed_dict_ge
+                        )
                         # *****************
                         summary_writer.add_summary(g_summary, counter)
                         summary_writer.add_summary(e_summary, counter)
