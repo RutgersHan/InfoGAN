@@ -22,12 +22,14 @@ if __name__ == "__main__":
     # root_log_dir = "logs/" + dataset_name
     # root_checkpoint_dir = "ckt/" + dataset_name
     root_log_dir = "ckt_logs/" + dataset_name
-    pretrained_model = "%s/birds_2016_09_29_10_22_42/birds_2016_09_29_10_22_42_10000.ckpt" % root_log_dir
+    # pretrained_model = "%s/birds_2016_09_29_10_22_42/birds_2016_09_29_10_22_42_10000.ckpt" % root_log_dir
+    pretrained_model = None  # "%s/1like_0.0002gl_birds_2016_09_29_02_28_26/birds_2016_09_29_02_28_26_34000.ckpt" % root_log_dir
 
     batch_size = 256
     updates_per_epoch = 50
     max_epoch = 2000
     embedding_dim = 100
+    background_dim = 1
 
     exp_name = "%s_%s" % (dataset_name, timestamp)
 
@@ -37,10 +39,11 @@ if __name__ == "__main__":
 
     mkdir_p(log_dir)
     # mkdir_p(checkpoint_dir)
+    datadir = 'Data/%s' % dataset_name
+    dataset = FlowerDataset(datadir)
 
-    dataset = FlowerDataset()
-    dataset.train = dataset.get_data('Data/%s/%s64image_mask_train.pickle' % (dataset_name, dataset_name))
-    dataset.test = dataset.get_data('Data/%s/%s64image_mask_test.pickle' % (dataset_name, dataset_name))
+    dataset.train = dataset.get_data('%s/%s64image_mask_train.pickle' % (datadir, dataset_name))
+    dataset.test = dataset.get_data('%s/%s64image_mask_test.pickle' % (datadir, dataset_name))
 
     latent_spec = [
         (Uniform(64), False),
@@ -59,7 +62,8 @@ if __name__ == "__main__":
         image_shape=dataset.image_shape,
         text_dim=dataset.embedding_shape[0],
         network_type="flower",
-        ef_dim=embedding_dim
+        ef_dim=embedding_dim,
+        bg_dim=background_dim
     )
 
     algo = ConInfoGANTrainer(

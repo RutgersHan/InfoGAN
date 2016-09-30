@@ -10,8 +10,10 @@ import sys
 from six.moves import range
 from progressbar import ETA, Bar, Percentage, ProgressBar
 from infogan.misc.distributions import Bernoulli, Gaussian, Categorical
+import scipy.misc
 
 TINY = 1e-8
+RECON_VS_GAN = 5.0  # 5.0  # 1e-6
 
 
 def sampleGaussian(mu, log_sigma):
@@ -27,11 +29,12 @@ def KL_loss(mu, log_sigma):
     with tf.name_scope("KL_divergence"):
         loss = tf.reduce_mean(-log_sigma + .5 * (-1 + tf.exp(2. * log_sigma) + tf.square(mu)))
         return loss
+
+
 def cosine_loss(vector1, vector2):
     normed_v1 = tf.nn.l2_norm(vector1, 1)
     normed_v2 = tf.nn.l2_norm(vector2, 1)
     return tf.contrib.losses.cosine_distance(normed_v1, normed_v2)
-
 
 
 class ConInfoGANTrainer(object):
@@ -49,7 +52,7 @@ class ConInfoGANTrainer(object):
                  info_reg_coeff=1.0,
                  con_info_reg_coeff=1.0,
                  discriminator_learning_rate=2e-4,
-                 generator_learning_rate=1e-3,  # 2e-4,
+                 generator_learning_rate=1e-3,  # 2e-4,  #
                  encoder_learning_rate=2e-4
                  ):
         """
@@ -97,11 +100,11 @@ class ConInfoGANTrainer(object):
             name='sample_c_var'
         )
         self.z_bg = tf.placeholder(
-            tf.float32, [self.batch_size] + [self.model.ef_dim],
+            tf.float32, [self.batch_size] + [self.model.bg_dim],
             name='background_noise'
         )
 
-        recon_vs_gan = 5.0  # 1.0  # 1e-6
+
 
         with pt.defaults_scope(phase=pt.Phase.train):
             c_var = self.model.generate_condition(self.embeddings)
@@ -112,6 +115,7 @@ class ConInfoGANTrainer(object):
             z_c_var = c_var[0] + c_var[1] * self.z_noise_c_var
 
             fake_x = self.model.get_generator(tf.concat(1, [z_c_var, self.z_bg]))
+            self.fake_x = fake_x
             noise_x = self.model.get_generator(tf.concat(1, [self.z_noise, self.z_bg]))
 
             # Change by TX (4)
@@ -156,7 +160,7 @@ class ConInfoGANTrainer(object):
             g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_d, tf.ones_like(fake_d)))
             g_loss2 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(noise_d, tf.ones_like(noise_d)))
             # Change by TX (1)
-            g_loss = g_loss1 + g_loss2 + recon_vs_gan * like_loss
+            g_loss = g_loss1 + g_loss2 + RECON_VS_GAN * like_loss
             # g_loss = (g_loss1 + g_loss2) / 2.
             # **********
             generator_loss = g_loss
@@ -177,7 +181,7 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("g_loss_fake", g_loss1))
 
             self.log_vars.append(("g_loss_noise", g_loss2))
-            self.log_vars.append(("g_like_loss_reweight", recon_vs_gan * like_loss))
+            self.log_vars.append(("g_like_loss_reweight", RECON_VS_GAN * like_loss))
 
             all_vars = tf.trainable_variables()
 
@@ -276,6 +280,81 @@ class ConInfoGANTrainer(object):
                 # images[i * 8 + j] = images[i * 8]
         return embeddings
 
+    def go_save(self, samples, metadata, path, dataset, num_copy):
+        row_imgs = {}
+        for r in range(metadata.caption_num):
+            row_imgs[metadata.filenames[r]] = []
+
+        for r in range(metadata.caption_num):
+            key = metadata.filenames[r]
+            row_img = [metadata.images[r, :, :, :]]
+            for c in range(num_copy):
+                row_img.append(samples[r * num_copy + c, :, :, :])
+            row_img = np.concatenate(row_img, axis=1)
+            row_imgs[key].append(row_img)
+        for key in row_imgs:
+            img = np.concatenate(row_imgs[key], axis=0)
+            # print('%s/%s.jpg' % (path, key), img.shape)
+            scipy.misc.imsave('%s/%s_%s.jpg' % (path, key, dataset), img)
+
+    def epoch_save_samples(self, sess, num_copy):
+        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.bg_dim))
+
+        embeddings_train = np.repeat(self.dataset.fixedvisual_train.embeddings, num_copy, axis=0)
+        embeddings_test = np.repeat(self.dataset.fixedvisual_test.embeddings, num_copy, axis=0)
+        embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
+        z1 = np.tile(np.random.normal(0., 1., (num_copy, self.model.ef_dim)),
+                     [embeddings.shape[0] / num_copy, 1])
+        if embeddings.shape[0] < self.batch_size:
+            z_pad = np.random.normal(0., 1., (self.batch_size - embeddings.shape[0], self.model.ef_dim))
+            z1 = np.concatenate([z1, z_pad], axis=0)
+            _, _, embeddings_pad, _ = self.dataset.test.next_batch(self.batch_size - embeddings.shape[0])
+            embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
+
+        feed_dict = {self.embeddings: embeddings,
+                     self.z_noise_c_var: z1,
+                     self.z_bg: z_bg}
+        gen_samples = sess.run(self.fake_x, feed_dict)
+
+        # save train
+        num_train = self.dataset.fixedvisual_train.caption_num * num_copy
+        self.go_save(gen_samples[:num_train], self.dataset.fixedvisual_train,
+                     self.log_dir, 'train', num_copy)
+        # save test
+        num_test = self.dataset.fixedvisual_test.caption_num * num_copy
+        self.go_save(gen_samples[num_train:num_train + num_test],
+                     self.dataset.fixedvisual_test,
+                     self.log_dir, 'test', num_copy)
+
+    def epoch_sum_images(self, sess):
+        images_train, masks_train, embeddings_train, _ = self.dataset.train.next_batch(64)
+        embeddings_train = self.preprocess(embeddings_train)
+
+        images_test, masks_test, embeddings_test, _ = self.dataset.test.next_batch(64)
+        embeddings_test = self.preprocess(embeddings_test)
+
+        images = np.concatenate([images_train, images_test], axis=0)
+        masks = np.concatenate([masks_train, masks_test], axis=0)
+        embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
+
+        z1 = np.tile(np.random.normal(0., 1., (8, self.model.ef_dim)), [16, 1])
+        z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.bg_dim))
+        if self.batch_size > 128:
+            z_pad = np.random.normal(0., 1., (self.batch_size - 128, self.model.ef_dim))
+            z1 = np.concatenate([z1, z_pad], axis=0)
+            images_pad, masks_pad, embeddings_pad, _ = self.dataset.test.next_batch(self.batch_size - 128)
+            images = np.concatenate([images, images_pad], axis=0)
+            masks = np.concatenate([masks, masks_pad], axis=0)
+            embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
+        feed_dict = {self.images: images,
+                     self.masks: masks.astype(np.float32),
+                     self.embeddings: embeddings,
+                     self.z_noise_c_var: z1,
+                     self.z_noise: z2,
+                     self.z_bg: z_bg}
+        return sess.run(self.image_summary, feed_dict)
+
     def train(self):
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
             with tf.device("/gpu:1"):
@@ -290,6 +369,7 @@ class ConInfoGANTrainer(object):
                     saver.restore(sess, self.model_path)
                     counter = self.model_path[self.model_path.rfind('_') + 1:self.model_path.rfind('.')]
                     counter = int(counter)
+                    self.epoch_save_samples(sess, 8)
                 else:
                     print("Created model with fresh parameters.")
                     sess.run(tf.initialize_all_variables())
@@ -318,7 +398,7 @@ class ConInfoGANTrainer(object):
                         # print(type(masks), masks.shape)
                         z1 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                         z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
-                        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+                        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.bg_dim))
                         feed_dict_d = {self.images: images,
                                        self.masks: masks.astype(np.float32),
                                        self.embeddings: embeddings,
@@ -335,7 +415,7 @@ class ConInfoGANTrainer(object):
                         images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         z1 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
                         z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
-                        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
+                        z_bg = np.random.normal(0., 1., (self.batch_size, self.model.bg_dim))
                         feed_dict_ge = {self.images: images,
                                         self.masks: masks.astype(np.float32),
                                         self.embeddings: embeddings,
@@ -364,35 +444,8 @@ class ConInfoGANTrainer(object):
                             fn = saver.save(sess, "%s/%s.ckpt" % (self.checkpoint_dir, snapshot_name))
                             print("Model saved in file: %s" % fn)
 
-                    images_train, masks_train, embeddings_train, _ = self.dataset.train.next_batch(64)
-                    embeddings_train = self.preprocess(embeddings_train)
-
-                    images_test, masks_test, embeddings_test, _ = self.dataset.test.next_batch(64)
-                    embeddings_test = self.preprocess(embeddings_test)
-
-                    images = np.concatenate([images_train, images_test], axis=0)
-                    masks = np.concatenate([masks_train, masks_test], axis=0)
-                    embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
-
-                    z1 = np.tile(np.random.normal(0., 1., (8, self.model.ef_dim)), [16, 1])
-                    z2 = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
-                    z_bg = np.random.normal(0., 1., (self.batch_size, self.model.ef_dim))
-                    if self.batch_size > 128:
-                        z_pad = np.random.normal(0., 1., (self.batch_size - 128, self.model.ef_dim))
-                        z1 = np.concatenate([z1, z_pad], axis=0)
-                        images_pad, masks_pad, embeddings_pad, _ = self.dataset.test.next_batch(self.batch_size - 128)
-                        images = np.concatenate([images, images_pad], axis=0)
-                        masks = np.concatenate([masks, masks_pad], axis=0)
-                        embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
-
-                    feed_dict = {self.images: images,
-                                 self.masks: masks.astype(np.float32),
-                                 self.embeddings: embeddings,
-                                 self.z_noise_c_var: z1,
-                                 self.z_noise: z2,
-                                 self.z_bg: z_bg}
-                    epoch_image_summary = sess.run(self.image_summary, feed_dict)
-                    summary_writer.add_summary(epoch_image_summary, counter)
+                    summary_writer.add_summary(self.epoch_sum_images(sess), counter)
+                    self.epoch_save_samples(sess, 8)
 
                     avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
 

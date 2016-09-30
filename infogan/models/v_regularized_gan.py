@@ -9,7 +9,7 @@ from infogan.misc.custom_ops import leaky_rectify
 
 class ConRegularizedGAN(object):
     def __init__(self, output_dist, latent_spec, con_latent_spec, batch_size,
-                 image_shape, text_dim, network_type, gf_dim=64, df_dim=64, ef_dim=100):
+                 image_shape, text_dim, network_type, gf_dim=64, df_dim=64, ef_dim=100, bg_dim=100):
         """
         :type output_dist: Distribution e.g. MeanBernoulli(dataset.image_dim),
         :type latent_spec: list[(Distribution, bool)]
@@ -37,6 +37,7 @@ class ConRegularizedGAN(object):
         self.gf_dim = gf_dim
         self.df_dim = df_dim
         self.ef_dim = ef_dim
+        self.bg_dim = bg_dim
         assert all(isinstance(x, (Gaussian, Categorical, Bernoulli)) for x in self.reg_latent_dist.dists)
 
         self.reg_cont_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, Gaussian)])

@@ -93,10 +93,30 @@ class Dataset(object):
                     self._labels[start:end])
 
 
+class VisualizeData(object):
+    def __init__(self, workdir, dataset):
+        with open('%s/sample_captions/caption_embedding_image_name_%s.pickle'
+                  % (workdir, dataset), 'rb') as f:
+            self.captions, self.embeddings, self.images, self.filenames = pickle.load(f)
+        self.caption_num = len(self.captions)
+        # Change images value from [0, 255] to [-1., 1.]
+        self.images = self.images.astype(np.float32) / 127.5 - 1.
+        for i in range(self.caption_num):
+            s = self.filenames[i]
+            self.filenames[i] = s[s.find('/') + 1:]
+
 class FlowerDataset(object):
-    def __init__(self):
+    def __init__(self, workdir):
+        self.image_shape = [64, 64, 3]
+        self.image_dim = 64 * 64 * 3
+        self.embedding_shape = [4800]
         self.train = None
         self.test = None
+        self.fixedvisual_train = VisualizeData(workdir, 'train')
+        self.fixedvisual_test = VisualizeData(workdir, 'test')
+        self.fixedvisual_savepath = workdir + '/sample_captions/sample_lists'
+        # print(self.fixedvisual_train.filenames)
+        # print(self.fixedvisual_test.filenames)
 
     def get_data(self, pickle_path, flip_flag=True):
         with open(pickle_path, 'rb') as f:
