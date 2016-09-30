@@ -23,7 +23,7 @@ if __name__ == "__main__":
     # root_checkpoint_dir = "ckt/" + dataset_name
     root_log_dir = "ckt_logs/" + dataset_name
     # pretrained_model = "%s/birds_2016_09_29_10_22_42/birds_2016_09_29_10_22_42_10000.ckpt" % root_log_dir
-    pretrained_model = None  # "%s/1like_0.0002gl_birds_2016_09_29_02_28_26/birds_2016_09_29_02_28_26_34000.ckpt" % root_log_dir
+    pretrained_model = "%s/5like_0.001gl_birds_2016_09_29_23_43_42/birds_2016_09_29_23_43_42_40000.ckpt" % root_log_dir
 
     batch_size = 256
     updates_per_epoch = 50

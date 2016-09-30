@@ -303,7 +303,10 @@ class ConInfoGANTrainer(object):
         embeddings_train = np.repeat(self.dataset.fixedvisual_train.embeddings, num_copy, axis=0)
         embeddings_test = np.repeat(self.dataset.fixedvisual_test.embeddings, num_copy, axis=0)
         embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
-        z1 = np.tile(np.random.normal(0., 1., (num_copy, self.model.ef_dim)),
+        z_row = np.random.normal(0., 1., (num_copy - 1, self.model.ef_dim))
+        z_row_mean = np.zeros((1, self.model.ef_dim), dtype=np.float32)
+        z_row = np.concatenate([z_row_mean, z_row], axis=0)
+        z1 = np.tile(z_row,
                      [embeddings.shape[0] / num_copy, 1])
         if embeddings.shape[0] < self.batch_size:
             z_pad = np.random.normal(0., 1., (self.batch_size - embeddings.shape[0], self.model.ef_dim))
