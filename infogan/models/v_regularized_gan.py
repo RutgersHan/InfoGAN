@@ -55,7 +55,9 @@ class ConRegularizedGAN(object):
                 self.context_template = self.context_embedding()
                 # Change by TX (4)
                 self.feature_template = self.feature_extractor()
+            with tf.variable_scope("r_net"):
                 self.context_reconstruct_template = self.context_reconstruction()
+                self.bg_reconstruct_template = self.bg_reconstruction()
                 # **********
         else:
             raise NotImplementedError
@@ -112,6 +114,17 @@ class ConRegularizedGAN(object):
              custom_fully_connected(self.df_dim * 16))
         '''
         return feature_template
+
+    def bg_reconstruction(self):
+        # Change by TX (4)
+        # ####Use shared_template from discriminator as input
+        reconstruct_template = \
+            (pt.template("input").
+             custom_fully_connected(128).
+             fc_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(self.reg_latent_dist.dist_flat_dim))
+        return reconstruct_template
 
     def context_reconstruction(self):
         # Change by TX (4)
@@ -177,6 +190,11 @@ class ConRegularizedGAN(object):
 
     def reconstuct_context(self, shared_layers):
         return self.context_reconstruct_template.construct(input=shared_layers)
+
+    def reconstuct_bg(self, shared_layers):
+        bg_dist_flat = self.bg_reconstruct_template.construct(input=shared_layers)
+        bg_dist_info = self.reg_latent_dist.activate_dist(bg_dist_flat)
+        return bg_dist_info
 
     def get_discriminator(self, shared_layers):
         return self.discriminator_notshared_template.construct(input=shared_layers)

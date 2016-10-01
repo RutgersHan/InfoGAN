@@ -53,7 +53,7 @@ class Dataset(object):
         return transformed_images
 
     def sample_embeddings(self, embeddings):
-        if embeddings.shape[1] == 1:
+        if len(embeddings.shape) == 2 or embeddings.shape[1] == 1:
             return np.squeeze(embeddings)
         else:
             batch_size, embedding_num, _ = embeddings.shape
@@ -105,6 +105,7 @@ class VisualizeData(object):
             s = self.filenames[i]
             self.filenames[i] = s[s.find('/') + 1:]
 
+
 class FlowerDataset(object):
     def __init__(self, workdir):
         self.image_shape = [64, 64, 3]
@@ -114,7 +115,6 @@ class FlowerDataset(object):
         self.test = None
         self.fixedvisual_train = VisualizeData(workdir, 'train')
         self.fixedvisual_test = VisualizeData(workdir, 'test')
-        self.fixedvisual_savepath = workdir + '/sample_captions/sample_lists'
         # print(self.fixedvisual_train.filenames)
         # print(self.fixedvisual_test.filenames)
 
@@ -137,3 +137,66 @@ class FlowerDataset(object):
             self.embedding_shape = [array_embeddings.shape[-1]]
             # self.train = Dataset(array_images, array_embeddings, array_labels)
             return Dataset(array_images, array_masks, array_embeddings, array_labels)
+
+
+class VisualizeAttrData(object):
+    def __init__(self, images, embeddings, captions, vis_num, dataset):
+        # randix = np.random.randint(len(captions), size=vis_num)
+        # print(randix)
+        if dataset == 'test':
+            randix = [1478, 2699, 2910, 400, 2624, 924, 1933, 533, 2044, 2910]
+        else:
+            randix = [8362, 6141, 3614, 7870, 8146, 3028, 5426, 5367, 7215, 8542,
+                      67, 2464, 1141, 1393, 3879, 901, 1329, 507, 8651, 119]
+        vis_num = len(randix)
+        self.caption_num = vis_num
+        self.images = []
+        self.embeddings = []
+        self.captions = []
+        self.filenames = []
+        for i in range(self.caption_num):
+            self.images.append(images[randix[i]])
+            self.embeddings.append(embeddings[randix[i]])
+            s = captions[randix[i]][0]
+            # print('image: ', i)
+            # print(s)
+            self.captions.append(s)  # (s.replace("\n", ";"))
+            self.filenames.append(i)
+        self.images = np.array(self.images)
+        self.embeddings = np.array(self.embeddings)
+        # print(self.images.shape, self.embeddings.shape)
+        # print(self.captions)
+
+
+class BirdAttribuetDataset(object):
+    def __init__(self):
+        self.image_shape = [64, 64, 3]
+        self.image_dim = 64 * 64 * 3
+        self.embedding_shape = [312]
+        self.train = None
+        self.test = None
+        self.fixedvisual_train = None
+        self.fixedvisual_test = None
+
+    def get_data(self, pickle_path, vis_num, dataset, flip_flag=True):
+        with open(pickle_path, 'rb') as f:
+            height, width, depth, embedding_num, \
+                images, masks, embeddings, attributes, labels = pickle.load(f)
+
+            array_images = np.array([image for image in images])
+            array_masks = np.array([mask for mask in masks])
+            array_labels = None  # np.array([label for label in labels])
+            array_embeddings = np.array([
+                embedding for embedding in embeddings])
+
+            self.image_dim = height * width * depth
+            self.image_shape = [height, width, depth]
+            self.embedding_shape = [array_embeddings.shape[-1]]
+            data = Dataset(array_images, array_masks, array_embeddings, array_labels)
+            print('array_images', array_images.shape)
+            print('array_masks', array_masks.shape)
+            print('array_embeddings', array_embeddings.shape)
+            # print(type(attributes), len(attributes), attributes[0])
+            fixedvisual = VisualizeAttrData(images, embeddings, attributes, vis_num, dataset)
+
+            return data, fixedvisual

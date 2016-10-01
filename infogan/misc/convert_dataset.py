@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import tensorflow as tf
+# import tensorflow as tf
 import numpy as np
 import h5py
 import os
@@ -11,6 +11,7 @@ import pickle
 from utils import get_image, colorize
 import scipy.misc
 import scipy.io as sio
+import pandas as pd
 
 # from glob import glob
 
@@ -123,6 +124,7 @@ def load_mask(data_dir):
         mask_dic[key] = data
     return mask_dic
 
+
 def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
     h = h5py.File(os.path.join(data_dir, 'bird_tv.hdf5'))
 
@@ -206,8 +208,122 @@ def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
                      embeddings, labels], f_out)
 
 
+def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
+    # <class_id> <class_name>
+    class_list = pd.read_csv(os.path.join(data_dir, 'classes.txt'),
+                             delim_whitespace=True, header=None)[1].tolist()
+    print('class_list', len(class_list), class_list[:5])
+
+    captions = {}
+    attributes_strings = {}
+    image_lists = {}
+    for class_name in class_list:
+        image_lists[class_name] = []
+    # <image_id> <image_name>
+    img_filenames = pd.read_csv(os.path.join(data_dir, 'images.txt'),
+                                delim_whitespace=True, header=None)[1].tolist()
+    arr_attributes = sio.loadmat(os.path.join(data_dir, 'attributesVec.mat'))['attributesVec']
+    print('arr_attributes', type(arr_attributes), arr_attributes.shape)
+    attributesShortNames = pd.read_csv(os.path.join(data_dir, 'attributesShortNames.txt'),
+                                       delim_whitespace=True, header=None)
+    for i in xrange(len(img_filenames)):
+        name = img_filenames[i]
+        image_lists[name[:name.find('/')]].append(name)
+        captions[name] = arr_attributes[i]
+        attributes_strings[name] = []
+        s = ''
+        idx = np.where(arr_attributes[i, :] == 1)[0]
+        # print(type(idx), len(idx), idx)
+        if len(idx) > 0:
+            df_hasAttr = attributesShortNames.iloc[idx].sort(columns=[1])
+            # print(type(df_hasAttr.index), len(df_hasAttr.index), df_hasAttr.index)
+            part = ''
+            for j in df_hasAttr.index:
+                row = attributesShortNames.iloc[j]
+                if part != row[1]:
+                    # print s
+                    part = row[1]
+                    s += '\n' + part + ': ' + row[2]
+                else:
+                    s += ';' + row[2]
+            # print s
+            attributes_strings[name].append(s)
+
+    class_list.sort()
+    training_num = int(len(class_list) * train_ratio)
+    training_class_list = class_list[0:training_num]
+    test_class_list = class_list[training_num:]
+    print('training_classes:', len(training_class_list), 'test_classes', len(test_class_list))
+
+    btrain = 1
+
+    height = IMSIZE
+    width = IMSIZE
+    depth = 3
+    embedding_num = 10
+    images = []
+    masks = []
+    embeddings = []
+    attributes = []
+    labels = []
+
+    if btrain:
+        class_list = training_class_list
+        # segmented image_mask
+        outfile = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'image_mask_attr' + '_train.pickle')
+    else:
+        class_list = test_class_list
+        outfile = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'image_mask_attr' + '_test.pickle')
+    filename_mask_dic = load_mask(data_dir)
+
+    for i, c in enumerate(class_list):
+        for j, f in enumerate(image_lists[c]):
+            # ####mask only has 0/1 values
+            mask = filename_mask_dic[f]
+            mask = scipy.misc.imresize(mask, [IMSIZE, IMSIZE])
+            # print(f, mask, np.sum(mask))
+            # print(type(mask), mask.shape)
+            # return
+            masks.append(mask)
+            f_name = os.path.join(data_dir, 'images_cropped', f)
+
+            # f_name = os.path.join(data_dir, 'segmented_images_cropped', f)
+
+            # print(f_name)
+            # ####[-1, 1]
+            image = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
+            image = colorize(image)
+            # print(image)
+            assert image.shape == (IMSIZE, IMSIZE, 3)
+            # ######Convert image to [0, 255]
+            # image += 1.
+            # image *= (255. / 2.)
+            # image = image.astype('uint8')
+
+            embedding = captions[f]
+            attr = attributes_strings[f]
+            # print(f)
+            # print(embedding)
+            # print(attr)
+
+            label = i  # temporary
+            print('%d\t%d' % (j, label))
+            images.append(image)
+            embeddings.append(embedding)
+            attributes.append(attr)
+            labels.append(label)
+
+            # return
+
+    with open(outfile, 'wb') as f_out:
+        pickle.dump([height, width, depth, embedding_num, images, masks,
+                     embeddings, attributes, labels], f_out)
+
+
+
 if __name__ == '__main__':
     # convert_flowers_dataset_pickle(FLOWER_DIR)
     # convert_flowers_dataset_tf(FLOWER_DIR)
     # convert_flowers_test_dataset_pickle(FLOWER_DIR)
-    convert_birds_dataset_pickle(BIRD_DIR)
+    # convert_birds_dataset_pickle(BIRD_DIR)
+    convert_birds_dataset_attribute_pickle(BIRD_DIR)
