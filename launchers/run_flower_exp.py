@@ -28,10 +28,11 @@ if __name__ == "__main__":
     batch_size = 256
     updates_per_epoch = 50
     max_epoch = 2000
-    embedding_dim = 100
-    background_dim = 1
-
-    exp_name = "1like_0.0002gl_subftr_attr%s_%s" % (dataset_name, timestamp)
+    embedding_dim = 312
+    print('updates_per_epoch: ', updates_per_epoch)
+    print('embedding_dim: ', embedding_dim)
+    # 1like_0.0002gl_subftr_
+    exp_name = "attr%s_%s" % (dataset_name, timestamp)
 
     log_dir = os.path.join(root_log_dir, exp_name)
     checkpoint_dir = log_dir
@@ -46,14 +47,14 @@ if __name__ == "__main__":
     # dataset.test = dataset.get_data('%s/%s64image_mask_test.pickle' % (datadir, dataset_name))
     #
     dataset = BirdAttribuetDataset()
-    dataset.train, dataset.fixedvisual_train = dataset.get_data('%s/%s64image_mask_attr_train.pickle'
-                                                                % (datadir, dataset_name), 20, 'train')
-    dataset.test, dataset.fixedvisual_test = dataset.get_data('%s/%s64image_mask_attr_test.pickle'
-                                                              % (datadir, dataset_name), 10, 'test')
+    filename_train = '%s/%s64image_mask_attr_train.pickle' % (datadir, dataset_name)
+    filename_test = '%s/%s64image_mask_attr_test.pickle' % (datadir, dataset_name)
+    dataset.train, dataset.fixedvisual_train = dataset.get_data(filename_train, 20, 'train')
+    dataset.test, dataset.fixedvisual_test = dataset.get_data(filename_test, 10, 'test')
+    print(filename_train)
 
     latent_spec = [
-        # (Bernoulli(embedding_dim), True)
-        # (Uniform(1), False),
+        (Uniform(1), False),
         (Categorical(32), True),
     ]
 
@@ -61,6 +62,8 @@ if __name__ == "__main__":
         # (LatentGaussian(embedding_dim), True)
         Bernoulli(embedding_dim)
     ]
+    print('latent_spec', latent_spec)
+    print('con_latent_spec', con_latent_spec)
 
     model = ConRegularizedGAN(
         output_dist=MeanBernoulli(dataset.image_dim),
@@ -70,8 +73,7 @@ if __name__ == "__main__":
         image_shape=dataset.image_shape,
         text_dim=dataset.embedding_shape[0],
         network_type="flower",
-        ef_dim=embedding_dim,
-        bg_dim=background_dim
+        ef_dim=embedding_dim
     )
 
     algo = ConInfoGANTrainer(

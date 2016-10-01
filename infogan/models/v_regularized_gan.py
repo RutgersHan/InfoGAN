@@ -9,7 +9,7 @@ from infogan.misc.custom_ops import leaky_rectify
 
 class ConRegularizedGAN(object):
     def __init__(self, output_dist, latent_spec, con_latent_spec, batch_size,
-                 image_shape, text_dim, network_type, gf_dim=64, df_dim=64, ef_dim=100, bg_dim=100):
+                 image_shape, text_dim, network_type, gf_dim=64, df_dim=64, ef_dim=100):
         """
         :type output_dist: Distribution e.g. MeanBernoulli(dataset.image_dim),
         :type latent_spec: list[(Distribution, bool)]
@@ -27,7 +27,7 @@ class ConRegularizedGAN(object):
         self.latent_spec = latent_spec
         self.latent_dist = Product([x for x, _ in latent_spec])
         self.con_latent_spec = con_latent_spec
-        self.con_latent_dist = Product([x for x, _ in con_latent_spec])
+        self.con_latent_dist = Product([x for x in con_latent_spec])
         self.reg_latent_dist = Product([x for x, reg in latent_spec if reg])
         self.nonreg_latent_dist = Product([x for x, reg in latent_spec if not reg])
         self.batch_size = batch_size
@@ -37,7 +37,6 @@ class ConRegularizedGAN(object):
         self.gf_dim = gf_dim
         self.df_dim = df_dim
         self.ef_dim = ef_dim
-        self.bg_dim = bg_dim
         assert all(isinstance(x, (Gaussian, Categorical, Bernoulli)) for x in self.reg_latent_dist.dists)
 
         self.reg_cont_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, Gaussian)])
@@ -53,12 +52,10 @@ class ConRegularizedGAN(object):
                 self.generator_template = self.generator()
             with tf.variable_scope("c_net"):
                 self.context_template = self.context_embedding()
-                # Change by TX (4)
                 self.feature_template = self.feature_extractor()
             with tf.variable_scope("r_net"):
                 self.context_reconstruct_template = self.context_reconstruction()
-                self.bg_reconstruct_template = self.bg_reconstruction()
-                # **********
+                self.reg_reconstruct_template = self.reg_reconstruction()
         else:
             raise NotImplementedError
 
@@ -115,31 +112,28 @@ class ConRegularizedGAN(object):
         '''
         return feature_template
 
-    def bg_reconstruction(self):
-        # Change by TX (4)
+    def reg_reconstruction(self):
         # ####Use shared_template from discriminator as input
         reconstruct_template = \
             (pt.template("input").
-             custom_fully_connected(128).
+             conv_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(512).
              fc_batch_norm().
              apply(leaky_rectify).
              custom_fully_connected(self.reg_latent_dist.dist_flat_dim))
         return reconstruct_template
 
     def context_reconstruction(self):
-        # Change by TX (4)
         # ####Use shared_template from discriminator as input
         reconstruct_template = \
             (pt.template("input").
              conv_batch_norm().
              apply(leaky_rectify).
-             # custom_fully_connected(self.ef_dim * 2).
-             # fc_batch_norm().
-             # apply(leaky_rectify).
-             # custom_fully_connected(self.ef_dim * 4).
-             # fc_batch_norm().
-             # apply(leaky_rectify).
-             custom_fully_connected(self.text_dim))
+             custom_fully_connected(512).
+             fc_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(self.con_latent_dist.dist_flat_dim))
         return reconstruct_template
 
     def generator(self):
@@ -189,12 +183,14 @@ class ConRegularizedGAN(object):
         return self.feature_template.construct(input=shared_layers)
 
     def reconstuct_context(self, shared_layers):
-        return self.context_reconstruct_template.construct(input=shared_layers)
+        dist_flat = self.context_reconstruct_template.construct(input=shared_layers)
+        dist_info = self.con_latent_dist.activate_dist(dist_flat)
+        return dist_info
 
-    def reconstuct_bg(self, shared_layers):
-        bg_dist_flat = self.bg_reconstruct_template.construct(input=shared_layers)
-        bg_dist_info = self.reg_latent_dist.activate_dist(bg_dist_flat)
-        return bg_dist_info
+    def reconstuct_reg(self, shared_layers):
+        dist_flat = self.reg_reconstruct_template.construct(input=shared_layers)
+        dist_info = self.reg_latent_dist.activate_dist(dist_flat)
+        return dist_info
 
     def get_discriminator(self, shared_layers):
         return self.discriminator_notshared_template.construct(input=shared_layers)
