@@ -6,14 +6,15 @@ from __future__ import unicode_literals
 import prettytensor as pt
 import tensorflow as tf
 import numpy as np
+import scipy.misc
 import sys
 from six.moves import range
 from progressbar import ETA, Bar, Percentage, ProgressBar
+
 from infogan.misc.distributions import Bernoulli, Gaussian, Categorical
-import scipy.misc
+from infogan.misc.config import cfg
 
 TINY = 1e-8
-RECON_VS_GAN = 1.0  # 5.0  # 1.0 # 1e-6
 
 
 def sampleGaussian(mu, log_sigma):
@@ -40,45 +41,29 @@ def cosine_loss(vector1, vector2):
 class ConInfoGANTrainer(object):
     def __init__(self,
                  model,
-                 batch_size,
                  dataset=None,
-                 exp_name="experiment",
-                 log_dir="logs",
-                 checkpoint_dir="ckt",
-                 pretrained_model=None,
-                 max_epoch=100,
-                 updates_per_epoch=50,
-                 snapshot_interval=2000,
-                 info_reg_coeff=1.0,
-                 con_info_reg_coeff=1.0,
-                 discriminator_learning_rate=2e-4,
-                 generator_learning_rate=2e-4,  # 2e-4,  #1e-3
-                 encoder_learning_rate=2e-4
+                 exp_name="model",
+                 ckt_logs_dir="ckt_logs",
                  ):
         """
         :type model: RegularizedGAN
         """
         self.model = model
         self.dataset = dataset
-        self.batch_size = batch_size
-        print('batch_size', batch_size)
-        self.max_epoch = max_epoch
         self.exp_name = exp_name
-        self.log_dir = log_dir
-        self.checkpoint_dir = checkpoint_dir
-        self.model_path = pretrained_model
-        self.snapshot_interval = snapshot_interval
-        self.updates_per_epoch = updates_per_epoch
-        self.generator_learning_rate = generator_learning_rate
-        print('generator_learning_rate', generator_learning_rate)
-        self.discriminator_learning_rate = discriminator_learning_rate
-        print('discriminator_learning_rate', discriminator_learning_rate)
-        self.encoder_learning_rate = encoder_learning_rate
-        print('encoder_learning_rate', encoder_learning_rate)
-        self.info_reg_coeff = info_reg_coeff
-        print('info_reg_coeff', info_reg_coeff)
-        self.con_info_reg_coeff = con_info_reg_coeff
-        print('con_info_reg_coeff', con_info_reg_coeff)
+        self.log_dir = ckt_logs_dir
+        self.checkpoint_dir = ckt_logs_dir
+
+        self.batch_size = cfg.TRAIN.BATCH_SIZE
+        self.max_epoch = cfg.TRAIN.MAX_EPOCH
+        self.updates_per_epoch = cfg.TRAIN.UPDATES_PER_EPOCH
+        self.snapshot_interval = cfg.TRAIN.SNAPSHOT_INTERVAL
+        self.model_path = cfg.TRAIN.PRETRAINED_MODEL
+
+        self.generator_learning_rate = cfg.TRAIN.GENERATOR_LR
+        self.discriminator_learning_rate = cfg.TRAIN.DISCRIMINATOR_LR
+        self.encoder_learning_rate = cfg.TRAIN.ENCODER_LR
+
         self.discriminator_trainer = None
         self.generator_trainer = None
         self.images = None
@@ -101,12 +86,16 @@ class ConInfoGANTrainer(object):
         with pt.defaults_scope(phase=pt.Phase.train):
             z = self.model.latent_dist.sample_prior(self.batch_size)
             reg_z = self.model.reg_z(z)
+            self.log_vars.append(("hist_reg_z", reg_z))
             c = self.embeddings
+            self.log_vars.append(("hist_c", c))
             z_c = tf.concat(1, [c, z])
             # TODO: sample different z for noise_z
             noise_z = self.model.latent_dist.sample_prior(self.batch_size)
             noise_reg_z = self.model.reg_z(noise_z)
+            self.log_vars.append(("hist_noise_reg_z", noise_reg_z))
             noise_c = self.model.con_latent_dist.sample_prior(self.batch_size)
+            self.log_vars.append(("hist_noise_c", noise_c))
             noise_z_c = tf.concat(1, [noise_c, noise_z])
 
             # ####d_loss_legit & d_loss_fake ##################################
@@ -147,67 +136,76 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("g_loss_noise", g_loss_noise))
 
             # #####Like loss###################################################
-            # # masks is tf.float32 with 0s and 1s
-            # real_masked_x = tf.mul(self.images, tf.expand_dims(self.masks, 3))
-            # fake_masked_x = tf.mul(fake_x, tf.expand_dims(self.masks, 3))
-            # # ##like loss based on element-wise distance between real and fake images
-            # # like_loss = tf.reduce_mean(tf.square(real_masked_x - fake_masked_x)) / 2.
-            #
-            # # ##like loss based on feature distance between real and fake images
-            #
-            # real_masked_shared_layers = self.model.get_discriminator_shared(real_masked_x)
-            # fake_masked_shared_layers = self.model.get_discriminator_shared(fake_masked_x)
-            # real_f = self.model.extract_features(real_masked_shared_layers)
-            # fake_f = self.model.extract_features(fake_masked_shared_layers)
-            # like_loss = tf.reduce_mean(tf.square(real_f - fake_f)) / 2.
-            # # ##Add like loss to ......
-            # generator_loss += RECON_VS_GAN * like_loss
-            # self.log_vars.append(("e_like_loss", like_loss))
-            # self.log_vars.append(("g_like_loss_reweight", RECON_VS_GAN * like_loss))
-            #
-            # # #######MI between fake_bg and the prior z_bg#####################
-            # # bg images have strong shape information
-            # # fake_bg_x = tf.mul(fake_x, tf.expand_dims(1. - self.masks, 3))
-            # # fake_bg_shared_layers = self.model.get_discriminator_shared(fake_bg_x)
-            # #
-            # fake_bg_shared_layers = fake_shared_layers - fake_masked_shared_layers
-            # #
-            # fake_reg_z_dist_info = self.model.reconstuct_bg(fake_bg_shared_layers)
+            if cfg.TRAIN.MASK_FLAG and cfg.TRAIN.COEFF.LIKE > TINY:
+                # masks is tf.float32 with 0s and 1s
+                real_masked_x = tf.mul(self.images, tf.expand_dims(self.masks, 3))
+                fake_masked_x = tf.mul(fake_x, tf.expand_dims(self.masks, 3))
+                # ##like loss based on element-wise distance between real and fake images
+                # like_loss = tf.reduce_mean(tf.square(real_masked_x - fake_masked_x)) / 2.
+
+                # ##like loss based on feature distance between real and fake images
+                real_masked_shared_layers = self.model.get_discriminator_shared(real_masked_x)
+                fake_masked_shared_layers = self.model.get_discriminator_shared(fake_masked_x)
+                real_f = self.model.extract_features(real_masked_shared_layers)
+                fake_f = self.model.extract_features(fake_masked_shared_layers)
+                like_loss = tf.reduce_mean(tf.square(real_f - fake_f)) / 2.
+                # ##Add like loss to ......
+                generator_loss += cfg.TRAIN.COEFF.LIKE * like_loss
+                discriminator_loss += cfg.TRAIN.COEFF.LIKE * like_loss
+                self.log_vars.append(("g_d_like_loss_reweight", cfg.TRAIN.COEFF.LIKE * like_loss))
+                #
+                # # #######MI between fake_bg and the prior z_bg#####################
+                # # bg images have strong shape information
+                # # fake_bg_x = tf.mul(fake_x, tf.expand_dims(1. - self.masks, 3))
+                # # fake_bg_shared_layers = self.model.get_discriminator_shared(fake_bg_x)
+                # #
+                # fake_bg_shared_layers = fake_shared_layers - fake_masked_shared_layers
+                # #
+                # fake_reg_z_dist_info = self.model.reconstuct_bg(fake_bg_shared_layers)
 
             # #######MI between fake_bg and the prior c/noise/reg_z#####################
             mi_sum = tf.constant(0.)
             # ###Reconstruct reg_z & c  from fake_x
-            fake_reg_z_dist_info = self.model.reconstuct_reg(fake_shared_layers)
-            fake_reg_z_mi = self.computeMI(self.model.reg_latent_dist, reg_z, fake_reg_z_dist_info, 1)
-            mi_sum += fake_reg_z_mi
-            self.log_vars.append(("MI_fake_reg_z", fake_reg_z_mi))
+            if cfg.TRAIN.COEFF.FAKE_REG_Z > TINY:
+                fake_reg_z_dist_info = self.model.reconstuct_reg(fake_shared_layers)
+                # self.log_vars.append(("hist_fake_reg_z", fake_reg_z_dist_info))
+                fake_reg_z_mi = self.computeMI(self.model.reg_latent_dist, reg_z, fake_reg_z_dist_info, 1)
+                mi_sum += cfg.TRAIN.COEFF.FAKE_REG_Z * fake_reg_z_mi
+                self.log_vars.append(("MI_fake_reg_z", fake_reg_z_mi))
             #
-            fake_c_dist_info = self.model.reconstuct_context(fake_shared_layers)
-            # TODO bprior=0
-            fake_c_mi = self.computeMI(self.model.con_latent_dist, c, fake_c_dist_info, 1)
-            mi_sum += fake_c_mi
-            self.log_vars.append(("MI_fake_c", fake_c_mi))
+            if cfg.TRAIN.COEFF.FAKE_C > TINY:
+                fake_c_dist_info = self.model.reconstuct_context(fake_shared_layers)
+                # self.log_vars.append(("hist_fake_c", fake_c_dist_info))
+                # TODO bprior=0
+                fake_c_mi = self.computeMI(self.model.con_latent_dist, c, fake_c_dist_info, 1)
+                mi_sum += cfg.TRAIN.COEFF.FAKE_C * fake_c_mi
+                self.log_vars.append(("MI_fake_c", fake_c_mi))
             # ###Reconstruct noise_reg_z & noise_c from noise_x
-            noise_reg_z_dist_info = self.model.reconstuct_reg(noise_shared_layers)
-            noise_reg_z_mi = self.computeMI(self.model.reg_latent_dist, noise_reg_z, noise_reg_z_dist_info, 1)
-            mi_sum += noise_reg_z_mi
-            self.log_vars.append(("MI_noise_reg_z", noise_reg_z_mi))
+            if cfg.TRAIN.COEFF.NOISE_REG_Z > TINY:
+                noise_reg_z_dist_info = self.model.reconstuct_reg(noise_shared_layers)
+                # self.log_vars.append(("hist_noise_reg_z", noise_reg_z_dist_info))
+                noise_reg_z_mi = self.computeMI(self.model.reg_latent_dist, noise_reg_z, noise_reg_z_dist_info, 1)
+                mi_sum += cfg.TRAIN.COEFF.NOISE_REG_Z * noise_reg_z_mi
+                self.log_vars.append(("MI_noise_reg_z", noise_reg_z_mi))
             #
-            noise_c_dist_info = self.model.reconstuct_context(noise_shared_layers)
-            noise_c_mi = self.computeMI(self.model.con_latent_dist, noise_c, noise_c_dist_info, 1)
-            mi_sum += noise_c_mi
-            self.log_vars.append(("MI_noise_c", noise_c_mi))
+            if cfg.TRAIN.COEFF.NOISE_C > TINY:
+                noise_c_dist_info = self.model.reconstuct_context(noise_shared_layers)
+                # self.log_vars.append(("hist_noise_c", noise_c_dist_info))
+                noise_c_mi = self.computeMI(self.model.con_latent_dist, noise_c, noise_c_dist_info, 1)
+                mi_sum += cfg.TRAIN.COEFF.NOISE_C * noise_c_mi
+                self.log_vars.append(("MI_noise_c", noise_c_mi))
             # ###Reconstruct c from real_x
-            real_c_var_dist_info = self.model.reconstuct_context(real_shared_layers)
-            # TODO bprior=0
-            real_c_mi = self.computeMI(self.model.con_latent_dist, c, real_c_var_dist_info, 1)
-            mi_sum += real_c_mi
-            self.log_vars.append(("MI_real_c", real_c_mi))
+            if cfg.TRAIN.COEFF.REAL_C > TINY:
+                real_c_var_dist_info = self.model.reconstuct_context(real_shared_layers)
+                # self.log_vars.append(("hist_real_c", real_c_var_dist_info))
+                # TODO bprior=0
+                real_c_mi = self.computeMI(self.model.con_latent_dist, c, real_c_var_dist_info, 1)
+                mi_sum += cfg.TRAIN.COEFF.REAL_C * real_c_mi
+                self.log_vars.append(("MI_real_c", real_c_mi))
 
-            discriminator_loss -= self.info_reg_coeff * mi_sum
-            generator_loss -= self.info_reg_coeff * mi_sum
+            discriminator_loss -= mi_sum
+            generator_loss -= mi_sum
             self.log_vars.append(("MI", mi_sum))
-            self.log_vars.append(("g_d_negMI_reweight", -self.info_reg_coeff * mi_sum))
 
             # compute for discrete and continuous codes separately
             # discrete:
@@ -248,21 +246,22 @@ class ConInfoGANTrainer(object):
             #                                           var_list=e_vars)
             # ****************************
 
-            all_sum = {'g': [], 'd': [], 'others': []}
+            all_sum = {'g': [], 'd': [], 'hist': [], 'others': []}
             for k, v in self.log_vars:
-                if k.startswith('condition'):
-                    all_sum['condition'].append(tf.histogram_summary(k, v))
+                if k.startswith('hist_'):
+                    all_sum['hist'].append(tf.histogram_summary(k, v))
                 elif k.startswith('g_'):
                     all_sum['g'].append(tf.scalar_summary(k, v))
                 elif k.startswith('d_'):
                     all_sum['d'].append(tf.scalar_summary(k, v))
-                elif k.startswith('e_'):
-                    all_sum['e'].append(tf.scalar_summary(k, v))
+                # elif k.startswith('e_'):
+                #    all_sum['e'].append(tf.scalar_summary(k, v))
                 else:
                     all_sum['others'].append(tf.scalar_summary(k, v))
 
             self.g_sum = tf.merge_summary(all_sum['g'])
             self.d_sum = tf.merge_summary(all_sum['d'])
+            self.hist_sum = tf.merge_summary(all_sum['hist'])
             # self.e_sum = tf.merge_summary(all_sum['e'])
             self.other_sum = tf.merge_summary(all_sum['others'])
 
@@ -418,30 +417,32 @@ class ConInfoGANTrainer(object):
 
     def train(self):
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-            with tf.device("/gpu:0"):
+            with tf.device("/gpu:%d" % cfg.GPU_ID):
                 self.init_opt()
-                # summary_op = tf.merge_all_summaries()
-                summary_writer = tf.train.SummaryWriter(self.log_dir, sess.graph)
 
                 saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=2)
-
-                if self.model_path:
+                if len(self.model_path) > 0:
                     print("Reading model parameters from %s" % self.model_path)
                     saver.restore(sess, self.model_path)
                     counter = self.model_path[self.model_path.rfind('_') + 1:self.model_path.rfind('.')]
                     counter = int(counter)
-                    self.epoch_save_samples(sess, 8)
+                    if not cfg.TRAIN.FLAG:
+                        self.epoch_save_samples(sess, 8)
+                        return
                 else:
                     print("Created model with fresh parameters.")
                     sess.run(tf.initialize_all_variables())
                     counter = 0
 
+                # summary_op = tf.merge_all_summaries()
+                summary_writer = tf.train.SummaryWriter(self.log_dir, sess.graph)
+
                 log_keys = []
                 log_vars = []
-                condition_var = []
+                hist_var = []
                 for k, v in self.log_vars:
-                    if k.startswith('condition'):
-                        condition_var.append(v)
+                    if k.startswith('hist'):
+                        hist_var.append(v)
                     else:
                         log_keys.append(k)
                         log_vars.append(v)
@@ -457,23 +458,24 @@ class ConInfoGANTrainer(object):
                         # training d
                         images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         # print(type(masks), masks.shape)
-                        feed_dict_d = {self.images: images,
-                                       self.masks: masks.astype(np.float32),
-                                       self.embeddings: embeddings
-                                       }
-                        _, d_summary, log_vals, condition_vals, other_summary = sess.run(
+                        feed_dict = {self.images: images,
+                                     self.masks: masks.astype(np.float32),
+                                     self.embeddings: embeddings
+                                     }
+                        _, d_summary, log_vals, hist_summary, other_summary = sess.run(
                             [self.discriminator_trainer, self.d_sum,
-                             log_vars, condition_var, self.other_sum], feed_dict_d)
+                             log_vars, self.hist_sum, self.other_sum], feed_dict)
 
                         summary_writer.add_summary(d_summary, counter)
+                        summary_writer.add_summary(hist_summary, counter)
                         summary_writer.add_summary(other_summary, counter)
                         # training g&e
-                        images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
-                        feed_dict_ge = {self.images: images,
-                                        self.masks: masks.astype(np.float32),
-                                        self.embeddings: embeddings}
+                        # images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
+                        # feed_dict = {self.images: images,
+                        #                 self.masks: masks.astype(np.float32),
+                        #                 self.embeddings: embeddings}
                         _, g_summary = sess.run(
-                            [self.generator_trainer, self.g_sum], feed_dict_ge
+                            [self.generator_trainer, self.g_sum], feed_dict
                         )
                         # _, e_summary = sess.run(
                         #    [self.encoder_trainer, self.e_sum], feed_dict_ge

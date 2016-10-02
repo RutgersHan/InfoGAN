@@ -3,13 +3,15 @@ import prettytensor as pt
 import tensorflow as tf
 import infogan.misc.custom_ops
 from infogan.misc.custom_ops import leaky_rectify
+from infogan.misc.config import cfg
 
 #  TODO: In discriminate
 #  Does template.constrct really shared the computation, I did 3 times construct
 
+
 class ConRegularizedGAN(object):
-    def __init__(self, output_dist, latent_spec, con_latent_spec, batch_size,
-                 image_shape, text_dim, network_type, gf_dim=64, df_dim=64, ef_dim=100):
+    def __init__(self, output_dist, latent_spec, con_latent_spec,
+                 image_shape, gf_dim=64, df_dim=64, ef_dim=100):
         """
         :type output_dist: Distribution e.g. MeanBernoulli(dataset.image_dim),
         :type latent_spec: list[(Distribution, bool)]
@@ -30,10 +32,9 @@ class ConRegularizedGAN(object):
         self.con_latent_dist = Product([x for x in con_latent_spec])
         self.reg_latent_dist = Product([x for x, reg in latent_spec if reg])
         self.nonreg_latent_dist = Product([x for x, reg in latent_spec if not reg])
-        self.batch_size = batch_size
-        self.network_type = network_type
+        self.batch_size = cfg.TRAIN.BATCH_SIZE
+        self.network_type = cfg.GAN.NETWORK_TYPE
         self.image_shape = image_shape
-        self.text_dim = text_dim
         self.gf_dim = gf_dim
         self.df_dim = df_dim
         self.ef_dim = ef_dim
@@ -44,7 +45,7 @@ class ConRegularizedGAN(object):
 
         self.image_size = image_shape[0]
         self.image_shape = image_shape
-        if network_type == "flower":
+        if cfg.GAN.NETWORK_TYPE == "default":
             with tf.variable_scope("d_net"):
                 self.shared_template = self.discriminator_shared()
                 self.discriminator_notshared_template = self.discriminator_notshared()
