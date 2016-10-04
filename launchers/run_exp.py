@@ -11,7 +11,7 @@ import pprint
 import sys
 
 from infogan.misc.distributions import Uniform, Gaussian, Categorical, MeanBernoulli, Bernoulli
-from infogan.misc.datasets_embedding import FlowerDataset, BirdAttribuetDataset
+from infogan.misc.datasets_embedding import TextDataset, AttributeDataset
 from infogan.models.v_regularized_gan import ConRegularizedGAN
 from infogan.algos.v_infogan_trainer import ConInfoGANTrainer
 from infogan.misc.utils import mkdir_p
@@ -77,15 +77,22 @@ if __name__ == "__main__":
     mkdir_p(ckt_logs_dir)
 
     datadir = 'Data/%s' % cfg.DATASET_NAME
-    # dataset = FlowerDataset(datadir)
-    dataset = BirdAttribuetDataset()
-    filename_train = '%s/%s_train.pickle' % (datadir, cfg.FILENAME)
     filename_test = '%s/%s_test.pickle' % (datadir, cfg.FILENAME)
-    dataset.train, dataset.fixedvisual_train = dataset.get_data(filename_train, 20, 'train')
-    dataset.test, dataset.fixedvisual_test = dataset.get_data(filename_test, 10, 'test')
+    filename_train = '%s/%s_train.pickle' % (datadir, cfg.FILENAME)
+    if cfg.ENCODER_INPUT == 'attribute':
+        dataset = AttributeDataset(datadir)
+        dataset.test, dataset.fixedvisual_test = dataset.get_data(filename_test, 10, 'test')
+        dataset.train, dataset.fixedvisual_train = dataset.get_data(filename_train, 20, 'train')
+    elif cfg.ENCODER_INPUT == 'text':
+        dataset = TextDataset(datadir)
+        dataset.test = dataset.get_data(filename_test)
+        dataset.train = dataset.get_data(filename_train)
+    else:
+        NotImplementedError
+
     # for i in range(dataset.fixedvisual_train.embeddings.shape[0]):
     #     print(dataset.fixedvisual_train.embeddings[i])
-    '''
+
     latent_spec, con_latent_spec = get_latent_spec()
 
     model = ConRegularizedGAN(
@@ -102,4 +109,3 @@ if __name__ == "__main__":
     )
 
     algo.train()
-    '''

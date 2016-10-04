@@ -11,7 +11,7 @@ from infogan.misc.config import cfg
 
 class ConRegularizedGAN(object):
     def __init__(self, output_dist, latent_spec, con_latent_spec,
-                 image_shape, gf_dim=64, df_dim=64, ef_dim=100):
+                 image_shape, gf_dim=64, df_dim=64):
         """
         :type output_dist: Distribution e.g. MeanBernoulli(dataset.image_dim),
         :type latent_spec: list[(Distribution, bool)]
@@ -37,7 +37,7 @@ class ConRegularizedGAN(object):
         self.image_shape = image_shape
         self.gf_dim = gf_dim
         self.df_dim = df_dim
-        self.ef_dim = ef_dim
+        self.ef_dim = cfg.GAN.EMBEDDING_DIM
         assert all(isinstance(x, (Gaussian, Categorical, Bernoulli)) for x in self.reg_latent_dist.dists)
 
         self.reg_cont_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, Gaussian)])
@@ -46,12 +46,18 @@ class ConRegularizedGAN(object):
         self.image_size = image_shape[0]
         self.image_shape = image_shape
         if cfg.GAN.NETWORK_TYPE == "default":
+            with tf.variable_scope("bg_d_net"):
+                self.bg_shared_template = self.discriminator_shared()
+                self.bg_discriminator_notshared_template = self.discriminator_notshared()
+            with tf.variable_scope("fg_d_net"):
+                self.fg_shared_template = self.discriminator_shared()
+                self.fg_discriminator_notshared_template = self.discriminator_notshared()
             with tf.variable_scope("d_net"):
                 self.shared_template = self.discriminator_shared()
                 self.discriminator_notshared_template = self.discriminator_notshared()
             with tf.variable_scope("g_net"):
                 self.generator_template = self.generator()
-            with tf.variable_scope("c_net"):
+            with tf.variable_scope("e_net"):
                 self.context_template = self.context_embedding()
                 self.feature_template = self.feature_extractor()
             with tf.variable_scope("r_net"):
@@ -195,6 +201,18 @@ class ConRegularizedGAN(object):
 
     def get_discriminator(self, shared_layers):
         return self.discriminator_notshared_template.construct(input=shared_layers)
+
+    def get_bg_discriminator_shared(self, x_var):
+        return self.bg_shared_template.construct(input=x_var)
+
+    def get_bg_discriminator(self, shared_layers):
+        return self.bg_discriminator_notshared_template.construct(input=shared_layers)
+
+    def get_fg_discriminator_shared(self, x_var):
+        return self.fg_shared_template.construct(input=x_var)
+
+    def get_fg_discriminator(self, shared_layers):
+        return self.fg_discriminator_notshared_template.construct(input=shared_layers)
 
     def get_generator(self, z_var):
         return self.generator_template.construct(input=z_var)

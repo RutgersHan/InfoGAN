@@ -12,7 +12,9 @@ cfg = __C
 
 # Dataset name: flowers, faces, birds
 __C.DATASET_NAME = 'birds'
-__C.FILENAME = 'birds64image_mask_attr'
+# Encoder input: text, attribute
+__C.ENCODER_INPUT = 'attribute'
+__C.FILENAME = 'birds64image_mask_bg_attr_text'
 __C.CONFIG_NAME = ''
 __C.GPU_ID = 0
 
@@ -20,23 +22,25 @@ __C.GPU_ID = 0
 __C.TRAIN = edict()
 __C.TRAIN.FLAG = True
 __C.TRAIN.BATCH_SIZE = 256
+__C.TRAIN.NUM_COPY = 8
 __C.TRAIN.UPDATES_PER_EPOCH = 50
 __C.TRAIN.MAX_EPOCH = 2000
 __C.TRAIN.SNAPSHOT_INTERVAL = 2000
 __C.TRAIN.PRETRAINED_MODEL = ''
 
+__C.TRAIN.BG_DISCRIMINATOR_LR = 2e-4
+__C.TRAIN.FG_DISCRIMINATOR_LR = 2e-4
 __C.TRAIN.DISCRIMINATOR_LR = 2e-4
 __C.TRAIN.GENERATOR_LR = 2e-4
 __C.TRAIN.ENCODER_LR = 2e-4
 __C.TRAIN.MASK_FLAG = False
 
 __C.TRAIN.COEFF = edict()
-__C.TRAIN.COEFF.FAKE_REG_Z = 1.0
-__C.TRAIN.COEFF.FAKE_C = 1.0
-__C.TRAIN.COEFF.NOISE_REG_Z = 1.0
-__C.TRAIN.COEFF.NOISE_C = 1.0
-__C.TRAIN.COEFF.REAL_C = 1.0
-__C.TRAIN.COEFF.LIKE = 1.0
+__C.TRAIN.COEFF.REG_Z = 0.0
+__C.TRAIN.COEFF.FAKE_C = 0.0
+__C.TRAIN.COEFF.NOISE_C = 0.0
+__C.TRAIN.COEFF.REAL_C = 0.0
+__C.TRAIN.COEFF.LIKE = 0.0
 
 # Modal options
 __C.GAN = edict()

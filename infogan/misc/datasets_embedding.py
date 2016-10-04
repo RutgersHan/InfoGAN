@@ -9,11 +9,12 @@ import random
 
 
 class Dataset(object):
-    def __init__(self, images, masks, embeddings, labels=None, flip_flag=True):
+    def __init__(self, images, masks, embeddings, bg_images=None, labels=None, flip_flag=True):
         self._images = images
         self._masks = masks
-        self._labels = labels
         self._embeddings = embeddings
+        self._bg_images = bg_images
+        self._labels = labels
         self._epochs_completed = -1
         self._num_examples = len(images)
         # shuffle on first run
@@ -31,6 +32,10 @@ class Dataset(object):
     @property
     def embeddings(self):
         return self._embeddings
+
+    @property
+    def bg_images(self):
+        return self._bg_images
 
     @property
     def num_examples(self):
@@ -60,6 +65,15 @@ class Dataset(object):
             randix = np.random.randint(embedding_num, size=batch_size)
             return np.squeeze(embeddings[np.arange(batch_size), randix, :])
 
+    def sample_bg_images(self, bg_images):
+        # print(bg_images.shape)
+        if len(bg_images.shape) == 4:
+            return np.squeeze(bg_images)
+        else:  # len(bg_images.shape) == 5
+            batch_size, bg_num, _, _, _ = bg_images.shape
+            randix = np.random.randint(bg_num, size=batch_size)
+            return np.squeeze(bg_images[np.arange(batch_size), randix, :])
+
     def next_batch(self, batch_size):
         """Return the next `batch_size` examples from this data set."""
         start = self._index_in_epoch
@@ -73,6 +87,8 @@ class Dataset(object):
             self._images = self._images[perm]
             self._masks = self._masks[perm]
             self._embeddings = self._embeddings[perm]
+            if self._bg_images is not None:
+                self._bg_images = self.bg_images[perm]
             if self._labels is not None:
                 self._labels = self._labels[perm]
             # Start next epoch
@@ -84,13 +100,18 @@ class Dataset(object):
         # sampled_images = self.transform(self._images[start:end])
         sampled_images = self._images[start:end]
         sampled_masks = self._masks[start:end]
-        sampled_embeddings = self.sample_embeddings(
-            self._embeddings[start:end])
-        if self._labels is None:
-            return sampled_images, sampled_masks, sampled_embeddings, None
+        sampled_embeddings = self.sample_embeddings(self._embeddings[start:end])
+        ret_list = [sampled_images, sampled_masks, sampled_embeddings]
+        if self._bg_images is not None:
+            sampled_bg_images = self.sample_bg_images(self._bg_images[start:end])
+            ret_list.append(sampled_bg_images)
         else:
-            return (sampled_images, sampled_masks, sampled_embeddings,
-                    self._labels[start:end])
+            ret_list.append(None)
+        if self._labels is not None:
+            ret_list.append(self._labels[start:end])
+        else:
+            ret_list.append(None)
+        return ret_list
 
 
 class VisualizeData(object):
@@ -106,7 +127,7 @@ class VisualizeData(object):
             self.filenames[i] = s[s.find('/') + 1:]
 
 
-class FlowerDataset(object):
+class TextDataset(object):
     def __init__(self, workdir):
         self.image_shape = [64, 64, 3]
         self.image_dim = 64 * 64 * 3
@@ -120,23 +141,22 @@ class FlowerDataset(object):
 
     def get_data(self, pickle_path, flip_flag=True):
         with open(pickle_path, 'rb') as f:
-            # images value in [-1, 1]
-            height, width, depth, embedding_num, \
-                images, masks, embeddings, labels = pickle.load(f)
+            # [height, width, depth, images, masks, bg_images,
+            # attr_embeddings, text_embeddings, attributes, labels]
+            # all images have values in [-1, 1]
+            height, width, depth, images, masks, bg_images,\
+                _, embeddings, _, _ = pickle.load(f)
             array_images = np.array([image for image in images])
             array_masks = np.array([mask for mask in masks])
-            array_labels = np.array([label for label in labels])
+            array_bg_images = np.array([img for img in bg_images])
             array_embeddings = np.array([
                 embedding for embedding in embeddings])
-            # print(type(masks), len(masks))
-            # print(type(array_masks), array_masks.shape)
-            # print(type(array_masks[0]), array_masks[0].shape)
-            # return
+            # array_labels = np.array([label for label in labels])
+
             self.image_dim = height * width * depth
             self.image_shape = [height, width, depth]
             self.embedding_shape = [array_embeddings.shape[-1]]
-            # self.train = Dataset(array_images, array_embeddings, array_labels)
-            return Dataset(array_images, array_masks, array_embeddings, array_labels)
+            return Dataset(array_images, array_masks, array_embeddings, array_bg_images, None)
 
 
 class VisualizeAttrData(object):
@@ -168,8 +188,8 @@ class VisualizeAttrData(object):
         # print(self.captions)
 
 
-class BirdAttribuetDataset(object):
-    def __init__(self):
+class AttributeDataset(object):
+    def __init__(self, workdir):
         self.image_shape = [64, 64, 3]
         self.image_dim = 64 * 64 * 3
         self.embedding_shape = [312]
@@ -180,21 +200,25 @@ class BirdAttribuetDataset(object):
 
     def get_data(self, pickle_path, vis_num, dataset, flip_flag=True):
         with open(pickle_path, 'rb') as f:
-            height, width, depth, embedding_num, \
-                images, masks, embeddings, attributes, labels = pickle.load(f)
+            # [height, width, depth, images, masks, bg_images,
+            # attr_embeddings, text_embeddings, attributes, labels]
+            height, width, depth, images, masks, bg_images, \
+                embeddings, _, attributes, _ = pickle.load(f)
 
             array_images = np.array([image for image in images])
             array_masks = np.array([mask for mask in masks])
-            array_labels = None  # np.array([label for label in labels])
+            array_bg_images = np.array([img for img in bg_images])
             array_embeddings = np.array([
                 embedding for embedding in embeddings])
+            # array_labels = np.array([label for label in labels])
 
             self.image_dim = height * width * depth
             self.image_shape = [height, width, depth]
             self.embedding_shape = [array_embeddings.shape[-1]]
-            data = Dataset(array_images, array_masks, array_embeddings, array_labels)
+            data = Dataset(array_images, array_masks, array_embeddings, array_bg_images, None)
             print('array_images', array_images.shape)
             print('array_masks', array_masks.shape)
+            print('array_bg_images', array_bg_images.shape)
             print('array_embeddings', array_embeddings.shape)
             # print(type(attributes), len(attributes), attributes[0])
             fixedvisual = VisualizeAttrData(images, embeddings, attributes, vis_num, dataset)
