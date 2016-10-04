@@ -85,7 +85,7 @@ if __name__ == "__main__":
     dataset.test, dataset.fixedvisual_test = dataset.get_data(filename_test, 10, 'test')
     # for i in range(dataset.fixedvisual_train.embeddings.shape[0]):
     #     print(dataset.fixedvisual_train.embeddings[i])
-    '''
+
     latent_spec, con_latent_spec = get_latent_spec()
 
     model = ConRegularizedGAN(
@@ -102,4 +102,4 @@ if __name__ == "__main__":
     )
 
     algo.train()
-    '''
+    

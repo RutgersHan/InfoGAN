@@ -1,0 +1,469 @@
+array_images (8822, 64, 64, 3)
+array_masks (8822, 64, 64)
+array_embeddings (8822, 312)
+[8362 6141 3614 7870 8146 3028 5426 5367 7215 8542   67 2464 1141 1393 3879
+  901 1329  507 8651  119]
+
+
+########################################
+image:  0
+
+belly: multi-colored;white
+bill: all-purpose;red
+bill_length: about_the_same_as_head
+breast: solid;white
+crown: white
+eye: black
+forehead: white
+nape: white
+primary_color: white;black
+shape: swallow-like
+size: medium
+tail: fan-shaped;multi-colored
+throat: white
+under_tail: white
+upper_tail: white;black
+upperparts: white;black
+wing: black;long;white
+
+
+
+########################################
+image:  1
+
+back: solid;black
+belly: black;solid
+breast: solid;black
+crown: black
+leg: black
+nape: black
+primary_color: black
+shape: perching-like
+size: small
+tail: solid
+under_tail: black
+upper_tail: black
+upperparts: black;black
+wing: black;solid
+
+
+########################################
+image:  2
+
+back: white;solid
+belly: white;solid
+bill: hooked_seabird;red;grey
+bill_length: about_the_same_as_head
+breast: white;solid
+crown: white
+eye: black
+forehead: white
+head: plain
+leg: black
+nape: white
+primary_color: white
+shape: gull-like
+size: medium
+tail: solid;fan-shaped
+throat: white
+under_tail: white
+upper_tail: white
+upperparts: white;white
+wing: white;pointed;solid
+
+
+########################################
+image:  3
+
+back: solid;brown
+bill: all-purpose;black
+bill_length: shorter_than_head
+breast: buff
+crown: brown
+eye: black
+forehead: brown
+head: eyering
+nape: brown
+primary_color: brown
+shape: sandpiper-like
+size: medium
+tail: notched;solid
+throat: buff
+under_tail: brown
+upper_tail: brown
+upperparts: brown
+wing: rounded;brown;solid
+
+
+########################################
+image:  4
+
+back: multi-colored;black;red
+belly: multi-colored;black;orange
+bill: cone;yellow
+bill_length: shorter_than_head
+breast: solid;orange
+crown: orange
+eye: black
+forehead: orange
+head: plain
+leg: black
+nape: orange
+primary_color: black;orange
+shape: perching-like
+size: small
+tail: solid;notched
+throat: orange
+under_tail: black
+upper_tail: orange
+upperparts: orange;black;orange;black
+wing: pointed;black;solid
+
+
+########################################
+image:  5
+
+back: solid;black
+bill: dagger;black
+bill_length: about_the_same_as_head
+breast: solid;white
+crown: black
+eye: black
+forehead: black
+head: capped
+nape: black;white
+primary_color: black;white
+shape: gull-like
+size: medium
+tail: pointed;solid
+throat: white
+under_tail: black
+upper_tail: black
+upperparts: black
+wing: tapered;black;solid
+
+
+########################################
+image:  6
+
+back: solid;grey
+belly: solid;grey
+bill: all-purpose;black
+bill_length: shorter_than_head
+breast: grey;solid
+crown: grey
+eye: black
+forehead: grey
+head: plain
+leg: grey
+nape: grey
+primary_color: grey
+shape: pigeon-like
+size: small
+tail: pointed;solid
+throat: grey
+under_tail: white
+upperparts: grey;black;grey
+wing: grey;black;multi-colored
+
+
+########################################
+image:  7
+
+back: solid;brown
+belly: spotted;brown
+bill: brown
+bill_length: shorter_than_head
+breast: brown;spotted
+crown: brown
+eye: black
+forehead: brown
+head: spotted
+nape: brown
+primary_color: brown
+shape: upland-ground-like
+size: medium
+tail: notched;solid
+throat: brown
+under_tail: brown
+upper_tail: brown
+upperparts: brown;brown
+wing: brown;spotted
+
+
+########################################
+image:  8
+
+back: multi-colored;buff;orange;brown
+belly: multi-colored;buff;orange;yellow
+bill: cone;buff
+bill_length: shorter_than_head
+breast: buff;orange;yellow;multi-colored
+crown: buff;orange;black
+eye: black
+forehead: buff;black;orange
+head: capped
+leg: orange
+nape: buff;orange
+primary_color: buff;brown;orange;yellow
+shape: perching-like
+size: very_small
+tail: multi-colored;notched
+throat: buff;orange;yellow
+under_tail: brown;buff
+upper_tail: buff;yellow;brown
+upperparts: buff;orange;black;buff;orange;white
+wing: buff;rounded;brown;orange;multi-colored
+
+
+########################################
+image:  9
+
+belly: solid;white
+bill: dagger;black;orange
+bill_length: about_the_same_as_head
+breast: solid;white
+crown: black
+eye: black
+forehead: black
+head: capped
+leg: orange
+nape: grey
+primary_color: black;white
+shape: swallow-like
+size: large
+tail: solid;forked
+throat: white
+under_tail: grey;black
+upperparts: white
+wing: pointed;black;solid
+
+
+########################################
+image:  10
+
+belly: solid;white
+bill: hooked_seabird;buff
+bill_length: about_the_same_as_head
+breast: solid;white
+crown: white
+eye: black
+forehead: white
+head: eyeline
+nape: white
+primary_color: black;white
+shape: gull-like
+size: medium
+tail: rounded;multi-colored
+throat: white
+under_tail: black
+upper_tail: white
+upperparts: white
+wing: black;long;solid
+
+
+########################################
+image:  11
+
+belly: multi-colored;white;yellow
+bill: all-purpose;grey
+bill_length: about_the_same_as_head
+breast: solid;white
+crown: grey
+eye: black
+forehead: grey
+head: plain
+leg: black
+nape: grey
+primary_color: grey;yellow;white
+shape: chicken-like-marsh
+size: small
+tail: rounded
+throat: white
+under_tail: black
+upperparts: white;yellow
+
+
+########################################
+image:  12
+
+back: solid;black
+belly: solid;white
+bill: all-purpose;black;grey
+bill_length: shorter_than_head
+breast: solid;black
+crown: black
+eye: black
+forehead: black
+head: plain
+leg: buff;grey
+nape: black
+primary_color: white;black
+shape: perching-like
+size: small
+tail: solid
+throat: black
+upper_tail: grey;black
+upperparts: black;black;white
+wing: white;black;striped
+
+
+########################################
+image:  13
+
+back: solid;black
+belly: solid;black
+bill: hooked_seabird;black
+bill_length: about_the_same_as_head
+breast: solid;black
+crown: black
+eye: black
+forehead: black
+head: plain
+leg: black
+nape: black
+primary_color: black
+shape: upright-perching_water-like
+size: large
+tail: rounded;solid
+throat: black
+under_tail: black
+upper_tail: black
+upperparts: black;black
+wing: black;solid
+
+
+########################################
+image:  14
+
+back: striped;olive;iridescent;brown
+belly: white;iridescent;striped
+bill: needle;black
+bill_length: about_the_same_as_head
+breast: striped;white;iridescent;buff
+crown: iridescent;brown
+eye: black
+forehead: brown
+head: striped
+leg: brown
+nape: olive;buff
+primary_color: olive;brown;iridescent
+shape: hummingbird-like
+size: very_small
+throat: buff;white
+upper_tail: olive;iridescent
+upperparts: white;olive;iridescent;olive;iridescent;brown
+wing: brown;solid
+
+
+########################################
+image:  15
+
+belly: solid;red
+bill: cone;red
+bill_length: shorter_than_head
+breast: solid;red
+crown: red
+eye: black
+forehead: black;red
+head: masked;crested
+leg: grey;brown
+nape: red
+primary_color: red
+shape: perching-like
+size: small
+tail: notched;solid
+throat: black;red
+under_tail: rufous
+upperparts: red
+wing: pointed;rufous;solid
+
+
+########################################
+image:  16
+
+belly: black;solid
+bill: hooked_seabird;buff
+bill_length: about_the_same_as_head
+nape: black
+primary_color: black
+shape: duck-like
+size: medium
+throat: black
+upperparts: black
+
+
+########################################
+image:  17
+
+belly: solid;black
+bill: dagger;black
+bill_length: about_the_same_as_head
+breast: solid;black
+crown: black
+eye: black
+forehead: black
+head: plain
+leg: grey
+nape: black
+primary_color: black
+shape: hummingbird-like
+size: medium
+tail: squared;solid
+throat: black
+under_tail: black
+upperparts: black;black
+wing: red
+
+
+########################################
+image:  18
+
+back: solid;grey
+belly: solid;grey
+bill: cone;black
+bill_length: shorter_than_head
+breast: solid;grey
+crown: orange
+eye: black
+forehead: orange;grey
+head: capped
+leg: grey
+nape: grey
+primary_color: grey
+shape: perching-like
+size: very_small
+tail: multi-colored
+throat: white;grey
+under_tail: black;yellow
+upper_tail: grey
+upperparts: grey;grey;yellow
+wing: yellow;grey;multi-colored
+
+
+########################################
+image:  19
+
+back: solid
+belly: white;solid
+bill: hooked_seabird;buff
+bill_length: longer_than_head
+breast: solid;white
+crown: white
+eye: black
+forehead: white
+head: eyeline
+leg: grey
+nape: white
+primary_color: white
+shape: gull-like
+size: medium
+tail: pointed;solid
+throat: white
+under_tail: white
+upper_tail: grey
+upperparts: white;grey
+wing: grey;long;solid
+
+
+

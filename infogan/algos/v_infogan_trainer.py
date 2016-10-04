@@ -90,6 +90,7 @@ class ConInfoGANTrainer(object):
             c = self.embeddings
             self.log_vars.append(("hist_c", c))
             z_c = tf.concat(1, [c, z])
+            z_c = tf.truncated_normal(z_c.get_shape(), z_c, 0.25, dtype=tf.float32)
             # TODO: sample different z for noise_z
             noise_z = self.model.latent_dist.sample_prior(self.batch_size)
             noise_reg_z = self.model.reg_z(noise_z)
@@ -97,6 +98,9 @@ class ConInfoGANTrainer(object):
             noise_c = self.model.con_latent_dist.sample_prior(self.batch_size)
             self.log_vars.append(("hist_noise_c", noise_c))
             noise_z_c = tf.concat(1, [noise_c, noise_z])
+            noise_z_c = tf.truncated_normal(noise_z_c.get_shape(), noise_z_c, 0.25, dtype=tf.float32)
+            print(noise_z_c.get_shape())
+            print('_______-----*****')
 
             # ####d_loss_legit & d_loss_fake ##################################
             fake_x = self.model.get_generator(z_c)
@@ -120,6 +124,7 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("d_loss_fake", d_loss_fake))
             self.log_vars.append(("d_loss_noise", d_loss_noise))
             self.log_vars.append(("d_loss_real", d_loss_legit))
+            self.log_vars.append(("d_loss", discriminator_loss))
 
             real_p = tf.nn.sigmoid(real_d)
             feak_p = tf.nn.sigmoid(fake_d)
@@ -134,6 +139,7 @@ class ConInfoGANTrainer(object):
             generator_loss = (g_loss_fake + g_loss_noise) / 2.  # TODO: change the ratio of these two
             self.log_vars.append(("g_loss_fake", g_loss_fake))
             self.log_vars.append(("g_loss_noise", g_loss_noise))
+            self.log_vars.append(("g_loss", generator_loss))
 
             # #####Like loss###################################################
             if cfg.TRAIN.MASK_FLAG and cfg.TRAIN.COEFF.LIKE > TINY:
@@ -215,8 +221,8 @@ class ConInfoGANTrainer(object):
             #    disc_mi_est = self.computeMI(self.model.reg_disc_latent_dist, disc_reg_z, disc_reg_dist_info, bprior)
 
             # #######Total loss for each network###############################
-            self.log_vars.append(("d_loss", discriminator_loss))
-            self.log_vars.append(("g_loss", generator_loss))
+            self.log_vars.append(("d_loss_total", discriminator_loss))
+            self.log_vars.append(("g_loss_total", generator_loss))
 
             all_vars = tf.trainable_variables()
 

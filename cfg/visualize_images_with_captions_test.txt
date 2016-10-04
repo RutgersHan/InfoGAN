@@ -1,0 +1,237 @@
+
+array_images (2966, 64, 64, 3)
+array_masks (2966, 64, 64)
+array_embeddings (2966, 312)
+[1478 2699 2910  400 2624  924 1933  533 2044 2910]
+
+########################################
+image:  0
+
+back: solid;olive;yellow
+belly: solid;olive;yellow
+bill: all-purpose;grey
+bill_length: shorter_than_head
+breast: solid;yellow;olive
+crown: yellow;olive
+eye: black
+forehead: olive;yellow
+head: plain
+leg: grey
+nape: yellow;olive
+primary_color: white;olive;yellow;grey
+shape: hummingbird-like
+size: very_small
+tail: notched;solid
+throat: olive;yellow
+under_tail: grey
+upper_tail: grey
+upperparts: buff;yellow;olive;white;yellow;olive;grey
+wing: white;pointed;grey;solid
+
+########################################
+image:  1
+
+belly: solid;buff
+bill: all-purpose;buff;black
+bill_length: about_the_same_as_head
+breast: solid;buff
+crown: brown;buff
+eye: black;brown
+forehead: brown;buff
+head: plain
+leg: buff
+nape: brown;buff
+primary_color: black;brown;buff
+shape: perching-like
+size: very_small
+tail: squared;striped
+throat: buff;brown
+under_tail: brown;black
+upperparts: buff;buff;black;brown
+wing: black;brown;pointed;striped
+
+########################################
+image:  2
+
+back: solid;yellow;buff
+belly: solid;buff;yellow
+bill: all-purpose;grey
+bill_length: shorter_than_head
+breast: solid;yellow
+crown: buff
+eye: black
+forehead: buff
+head: masked
+leg: buff
+nape: buff
+primary_color: yellow
+shape: perching-like
+size: small
+tail: fan-shaped;solid
+throat: yellow
+under_tail: yellow;buff
+upper_tail: yellow;buff
+upperparts: buff;yellow;buff;yellow
+wing: buff;yellow;solid
+
+########################################
+image:  3
+
+belly: multi-colored;white;yellow
+bill: all-purpose;grey
+bill_length: about_the_same_as_head
+breast: solid;yellow
+crown: yellow;olive
+eye: black
+forehead: yellow;olive
+head: plain;eyebrow
+leg: black
+nape: yellow;olive
+primary_color: yellow;olive
+shape: perching-like
+size: very_small
+tail: rounded
+throat: yellow
+upperparts: white;yellow
+
+########################################
+image:  4
+
+back: brown;solid
+belly: buff;solid
+bill: all-purpose;white;black
+bill_length: about_the_same_as_head
+breast: buff;solid
+crown: brown
+eye: black
+forehead: brown
+head: eyebrow
+leg: brown
+nape: brown
+primary_color: brown
+shape: duck-like
+size: very_small
+tail: solid;notched
+throat: white
+under_tail: buff
+upper_tail: buff
+upperparts: buff;brown
+wing: brown;tapered;solid
+
+########################################
+image:  5
+
+back: multi-colored;grey
+belly: solid;white;grey
+bill: all-purpose;buff;grey
+bill_length: shorter_than_head
+breast: solid;grey;white
+crown: grey;yellow
+eye: black
+forehead: yellow
+head: eyeline
+leg: grey
+nape: grey;white
+primary_color: white;grey
+shape: perching-like
+size: very_small
+tail: fan-shaped
+throat: grey;black
+upperparts: grey;grey;white;yellow
+wing: rounded;yellow;grey;multi-colored
+
+########################################
+image:  6
+
+back: brown
+belly: spotted;yellow;brown
+bill: all-purpose;brown
+bill_length: shorter_than_head
+breast: brown;yellow;spotted
+crown: brown
+eye: black
+forehead: brown
+head: eyebrow
+leg: buff
+nape: brown
+primary_color: yellow;brown
+shape: sandpiper-like
+size: small
+throat: brown;yellow
+upperparts: brown;yellow;brown
+wing: pointed;brown;solid
+
+########################################
+image:  7
+
+back: solid;black
+belly: solid;white
+bill: all-purpose;black
+bill_length: shorter_than_head
+breast: solid;white
+crown: grey;black
+eye: black
+forehead: black;grey
+head: masked;capped
+leg: black
+nape: grey;black
+primary_color: black;grey
+shape: perching-like
+size: small
+tail: pointed;multi-colored
+throat: black
+under_tail: white;black
+upper_tail: black;white
+upperparts: white;black;white
+wing: white;black;multi-colored
+
+########################################
+image:  8
+
+back: solid;buff;brown
+belly: solid;buff
+bill: cone;black
+bill_length: shorter_than_head
+breast: solid;black;buff
+crown: red;buff
+eye: black
+forehead: red;buff
+head: crested;masked;unique_pattern
+leg: buff
+nape: buff
+primary_color: buff
+shape: swallow-like
+size: small
+tail: pointed;multi-colored
+throat: black
+under_tail: black;red;yellow;buff
+upper_tail: buff
+upperparts: buff;brown;buff
+wing: red;pointed;white;black;yellow;multi-colored
+
+########################################
+image:  9
+
+back: solid;yellow;buff
+belly: solid;buff;yellow
+bill: all-purpose;grey
+bill_length: shorter_than_head
+breast: solid;yellow
+crown: buff
+eye: black
+forehead: buff
+head: masked
+leg: buff
+nape: buff
+primary_color: yellow
+shape: perching-like
+size: small
+tail: fan-shaped;solid
+throat: yellow
+under_tail: yellow;buff
+upper_tail: yellow;buff
+upperparts: buff;yellow;buff;yellow
+wing: buff;yellow;solid
+
+########################################
+(10, 64, 64, 3) (10, 312)
