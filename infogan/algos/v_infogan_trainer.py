@@ -97,9 +97,10 @@ class ConInfoGANTrainer(object):
             print(c[0].get_shape())
             print(c[1].get_shape())
             print('****************')
-            self.log_vars.append(("condition_mean", c[0]))
-            self.log_vars.append(("condition_log_sigma", c[1]))
+            self.log_vars.append(("hist_mean", c[0]))
+            self.log_vars.append(("hist_log_sigma", c[1]))
             kl_loss = KL_loss(c[0], c[1])
+            self.log_vars.append(("kl_loss", kl_loss))
             c_sampled = c[0] + c[1] * self.z_noise_c_var
             z_c = tf.concat(1, [c_sampled, self.z])
 
@@ -207,7 +208,7 @@ class ConInfoGANTrainer(object):
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
-                # self.visualization()
+                self.visualization()
                 print("success")
 
     def computeMI(self, dist, reg_z, reg_dist_info, bprior):
@@ -262,11 +263,15 @@ class ConInfoGANTrainer(object):
         return current_img_summary
 
     def visualization(self):
-        c = self.embeddings
-        z_row = self.model.latent_dist.sample_prior(8)
+        c = self.model.generate_condition(self.embeddings)
+        # get the mean
+        c = c[0]
+        # z_row = self.model.latent_dist.sample_prior(8)
+        z_row = np.random.normal(0., 1., (8, self.z_dim)).astype(np.float32)
         z = tf.tile(z_row, tf.constant([16, 1]))
         if self.batch_size > 128:
-            z_pad = self.model.latent_dist.sample_prior(self.batch_size - 128)
+            # z_pad = self.model.latent_dist.sample_prior(self.batch_size - 128)
+            z_pad = np.random.normal(0., 1., (self.batch_size - 128, self.z_dim)).astype(np.float32)
             z = tf.concat(0, [z, z_pad])
         z_c = tf.concat(1, [c, z])
         imgs = self.model.get_generator(z_c)
@@ -279,7 +284,7 @@ class ConInfoGANTrainer(object):
                                                  tf.expand_dims(self.masks[64:128, :, :], 3),
                                                  8, "test_image_on_text")
 
-        noise_c = self.model.con_latent_dist.sample_prior(self.batch_size)
+        noise_c = np.random.normal(0, 1, (self.batch_size, self.c_dim)).astype(np.float32)
         noise_z_c = tf.concat(1, [noise_c, z])
         noise_imgs = self.model.get_generator(noise_z_c)
         img_sum3 = self.visualize_one_superimage(noise_imgs[:64, :, :, :],
@@ -321,7 +326,12 @@ class ConInfoGANTrainer(object):
         if embeddings.shape[0] < self.batch_size:
             _, _, embeddings_pad, _ = self.dataset.test.next_batch(self.batch_size - embeddings.shape[0])
             embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
-        feed_dict = {self.embeddings: embeddings}
+        z1 = np.random.normal(0, 1, (self.batch_size, self.z_dim)).astype(np.float32)
+        z2 = np.random.normal(0, 1, (self.batch_size, self.c_dim)).astype(np.float32)
+        feed_dict = {self.embeddings: embeddings,
+                     self.z: z1,
+                     self.z_noise_c_var: z2
+                     }
         gen_samples = sess.run(self.fake_x, feed_dict)
 
         # save train
@@ -344,6 +354,8 @@ class ConInfoGANTrainer(object):
         images = np.concatenate([images_train, images_test], axis=0)
         masks = np.concatenate([masks_train, masks_test], axis=0)
         embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
+        z1 = np.random.normal(0., 1., (self.batch_size, self.z_dim)).astype(np.float32)
+        z2 = np.random.normal(0., 1., (self.batch_size, self.c_dim)).astype(np.float32)
         if self.batch_size > 128:
             images_pad, masks_pad, embeddings_pad, _ = self.dataset.test.next_batch(self.batch_size - 128)
             images = np.concatenate([images, images_pad], axis=0)
@@ -351,7 +363,9 @@ class ConInfoGANTrainer(object):
             embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
         feed_dict = {self.images: images,
                      self.masks: masks.astype(np.float32),
-                     self.embeddings: embeddings
+                     self.embeddings: embeddings,
+                     self.z: z1,
+                     self.z_noise_c_var: z2
                      }
         return sess.run(self.image_summary, feed_dict)
 
@@ -398,8 +412,8 @@ class ConInfoGANTrainer(object):
                         # training d
                         images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         # print(type(masks), masks.shape)
-                        z1 = np.random.normal(0., 1., (self.batch_size, self.model.z_dim))
-                        z2 = np.random.normal(0., 1., (self.batch_size, self.model.c_dim))
+                        z1 = np.random.normal(0., 1., (self.batch_size, self.z_dim)).astype(np.float32)
+                        z2 = np.random.normal(0., 1., (self.batch_size, self.c_dim)).astype(np.float32)
                         feed_dict = {self.images: images,
                                      self.masks: masks.astype(np.float32),
                                      self.embeddings: embeddings,
@@ -441,7 +455,7 @@ class ConInfoGANTrainer(object):
                             print("Model saved in file: %s" % fn)
 
                     summary_writer.add_summary(self.epoch_sum_images(sess), counter)
-                    # self.epoch_save_samples(sess, 8)
+                    self.epoch_save_samples(sess, 8)
 
                     avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
 

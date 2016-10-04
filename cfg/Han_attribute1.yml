@@ -1,4 +1,4 @@
-CONFIG_NAME: 'mi_like_test1'
+CONFIG_NAME: 'Han_attribute1'
 
 DATASET_NAME: 'birds'
 FILENAME: 'birds64image_mask_attr'
