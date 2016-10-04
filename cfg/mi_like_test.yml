@@ -9,7 +9,7 @@ TRAIN:
     UPDATES_PER_EPOCH: 50
     MAX_EPOCH: 2000
     SNAPSHOT_INTERVAL: 2000
-    PRETRAINED_MODEL: 'ckt_logs/birds/mi_like_test1_2016_10_03_00_12_14/model_12000.ckpt'
+    # PRETRAINED_MODEL: 'ckt_logs/birds/mi_like_test1_2016_10_03_00_12_14/model_12000.ckpt'
     DISCRIMINATOR_LR: 0.0002
     GENERATOR_LR: 0.0002
     ENCODER_LR: 0.0002

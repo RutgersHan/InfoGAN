@@ -16,6 +16,9 @@ __C.FILENAME = 'birds64image_mask_attr'
 __C.CONFIG_NAME = ''
 __C.GPU_ID = 0
 
+__C.Z_DIM = 64
+__C.C_DIM = 64
+
 # Training options
 __C.TRAIN = edict()
 __C.TRAIN.FLAG = True

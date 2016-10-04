@@ -70,6 +70,8 @@ class ConInfoGANTrainer(object):
         self.masks = None
         self.embeddings = None
         self.log_vars = []
+        self.z_dim = cfg.Z_DIM
+        self.c_dim = cfg.C_DIM
 
     def init_opt(self):
         self.images = tf.placeholder(
@@ -80,49 +82,44 @@ class ConInfoGANTrainer(object):
             name='real_masks')
         self.embeddings = tf.placeholder(
             tf.float32, [self.batch_size] + self.dataset.embedding_shape,
-            name='conditional_embeddings'
+            name='conditional_embeddings')
+        self.z = tf.placeholder(
+            tf.float32, [self.batch_size] + [self.z_dim],
+            name='sample_noise'
+        )
+        self.z_noise_c_var = tf.placeholder(
+            tf.float32, [self.batch_size] + [self.c_dim],
+            name='sample_c_var'
         )
 
         with pt.defaults_scope(phase=pt.Phase.train):
-            z = self.model.latent_dist.sample_prior(self.batch_size)
-            reg_z = self.model.reg_z(z)
-            self.log_vars.append(("hist_reg_z", reg_z))
-            c = self.embeddings
-            self.log_vars.append(("hist_c", c))
-            z_c = tf.concat(1, [c, z])
-            z_c = tf.truncated_normal(z_c.get_shape(), z_c, 0.25, dtype=tf.float32)
-            # TODO: sample different z for noise_z
-            noise_z = self.model.latent_dist.sample_prior(self.batch_size)
-            noise_reg_z = self.model.reg_z(noise_z)
-            self.log_vars.append(("hist_noise_reg_z", noise_reg_z))
-            noise_c = self.model.con_latent_dist.sample_prior(self.batch_size)
-            self.log_vars.append(("hist_noise_c", noise_c))
-            noise_z_c = tf.concat(1, [noise_c, noise_z])
-            noise_z_c = tf.truncated_normal(noise_z_c.get_shape(), noise_z_c, 0.25, dtype=tf.float32)
-            print(noise_z_c.get_shape())
-            print('_______-----*****')
+            c = self.model.generate_condition(self.embeddings)
+            print(c[0].get_shape())
+            print(c[1].get_shape())
+            print('****************')
+            self.log_vars.append(("condition_mean", c[0]))
+            self.log_vars.append(("condition_log_sigma", c[1]))
+            kl_loss = KL_loss(c[0], c[1])
+            c_sampled = c[0] + c[1] * self.z_noise_c_var
+            z_c = tf.concat(1, [c_sampled, self.z])
+
 
             # ####d_loss_legit & d_loss_fake ##################################
             fake_x = self.model.get_generator(z_c)
             self.fake_x = fake_x
-            noise_x = self.model.get_generator(noise_z_c)
+
 
             real_shared_layers = self.model.get_discriminator_shared(self.images)
             fake_shared_layers = self.model.get_discriminator_shared(fake_x)
-            noise_shared_layers = self.model.get_discriminator_shared(noise_x)
 
             real_d = self.model.get_discriminator(real_shared_layers)
             fake_d = self.model.get_discriminator(fake_shared_layers)
-            noise_d = self.model.get_discriminator(noise_shared_layers)
 
             d_loss_legit = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d, tf.ones_like(real_d)))
             d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_d, tf.zeros_like(fake_d)))
-            d_loss_noise = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(noise_d, tf.zeros_like(noise_d)))
-            d_loss_fake = (d_loss_fake + d_loss_noise) / 2.  # TODO: change the ratio of these two
 
             discriminator_loss = d_loss_legit + d_loss_fake
             self.log_vars.append(("d_loss_fake", d_loss_fake))
-            self.log_vars.append(("d_loss_noise", d_loss_noise))
             self.log_vars.append(("d_loss_real", d_loss_legit))
             self.log_vars.append(("d_loss", discriminator_loss))
 
@@ -135,94 +132,28 @@ class ConInfoGANTrainer(object):
 
             # ####g_loss_fake & g_loss_noise ##################################
             g_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_d, tf.ones_like(fake_d)))
-            g_loss_noise = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(noise_d, tf.ones_like(noise_d)))
-            generator_loss = (g_loss_fake + g_loss_noise) / 2.  # TODO: change the ratio of these two
-            self.log_vars.append(("g_loss_fake", g_loss_fake))
-            self.log_vars.append(("g_loss_noise", g_loss_noise))
+
+            generator_loss = g_loss_fake
             self.log_vars.append(("g_loss", generator_loss))
 
-            # #####Like loss###################################################
-            if cfg.TRAIN.MASK_FLAG and cfg.TRAIN.COEFF.LIKE > TINY:
-                # masks is tf.float32 with 0s and 1s
-                real_masked_x = tf.mul(self.images, tf.expand_dims(self.masks, 3))
-                fake_masked_x = tf.mul(fake_x, tf.expand_dims(self.masks, 3))
-                # ##like loss based on element-wise distance between real and fake images
-                # like_loss = tf.reduce_mean(tf.square(real_masked_x - fake_masked_x)) / 2.
+            real_re_shared_layers = self.model.get_reconstructor_shared(self.images)
+            fake_re_shared_layers = self.model.get_reconstructor_shared(fake_x)
 
-                # ##like loss based on feature distance between real and fake images
-                real_masked_shared_layers = self.model.get_discriminator_shared(real_masked_x)
-                fake_masked_shared_layers = self.model.get_discriminator_shared(fake_masked_x)
-                real_f = self.model.extract_features(real_masked_shared_layers)
-                fake_f = self.model.extract_features(fake_masked_shared_layers)
-                like_loss = tf.reduce_mean(tf.square(real_f - fake_f)) / 2.
-                # ##Add like loss to ......
-                generator_loss += cfg.TRAIN.COEFF.LIKE * like_loss
-                discriminator_loss += cfg.TRAIN.COEFF.LIKE * like_loss
-                self.log_vars.append(("g_d_like_loss_reweight", cfg.TRAIN.COEFF.LIKE * like_loss))
-                #
-                # # #######MI between fake_bg and the prior z_bg#####################
-                # # bg images have strong shape information
-                # # fake_bg_x = tf.mul(fake_x, tf.expand_dims(1. - self.masks, 3))
-                # # fake_bg_shared_layers = self.model.get_discriminator_shared(fake_bg_x)
-                # #
-                # fake_bg_shared_layers = fake_shared_layers - fake_masked_shared_layers
-                # #
-                # fake_reg_z_dist_info = self.model.reconstuct_bg(fake_bg_shared_layers)
+            real_f = self.model.get_reconstructor(real_re_shared_layers)
+            fake_f = self.model.get_reconstructor(fake_re_shared_layers)
 
-            # #######MI between fake_bg and the prior c/noise/reg_z#####################
-            mi_sum = tf.constant(0.)
-            # ###Reconstruct reg_z & c  from fake_x
-            if cfg.TRAIN.COEFF.FAKE_REG_Z > TINY:
-                fake_reg_z_dist_info = self.model.reconstuct_reg(fake_shared_layers)
-                # self.log_vars.append(("hist_fake_reg_z", fake_reg_z_dist_info))
-                fake_reg_z_mi = self.computeMI(self.model.reg_latent_dist, reg_z, fake_reg_z_dist_info, 1)
-                mi_sum += cfg.TRAIN.COEFF.FAKE_REG_Z * fake_reg_z_mi
-                self.log_vars.append(("MI_fake_reg_z", fake_reg_z_mi))
-            #
-            if cfg.TRAIN.COEFF.FAKE_C > TINY:
-                fake_c_dist_info = self.model.reconstuct_context(fake_shared_layers)
-                # self.log_vars.append(("hist_fake_c", fake_c_dist_info))
-                # TODO bprior=0
-                fake_c_mi = self.computeMI(self.model.con_latent_dist, c, fake_c_dist_info, 1)
-                mi_sum += cfg.TRAIN.COEFF.FAKE_C * fake_c_mi
-                self.log_vars.append(("MI_fake_c", fake_c_mi))
-            # ###Reconstruct noise_reg_z & noise_c from noise_x
-            if cfg.TRAIN.COEFF.NOISE_REG_Z > TINY:
-                noise_reg_z_dist_info = self.model.reconstuct_reg(noise_shared_layers)
-                # self.log_vars.append(("hist_noise_reg_z", noise_reg_z_dist_info))
-                noise_reg_z_mi = self.computeMI(self.model.reg_latent_dist, noise_reg_z, noise_reg_z_dist_info, 1)
-                mi_sum += cfg.TRAIN.COEFF.NOISE_REG_Z * noise_reg_z_mi
-                self.log_vars.append(("MI_noise_reg_z", noise_reg_z_mi))
-            #
-            if cfg.TRAIN.COEFF.NOISE_C > TINY:
-                noise_c_dist_info = self.model.reconstuct_context(noise_shared_layers)
-                # self.log_vars.append(("hist_noise_c", noise_c_dist_info))
-                noise_c_mi = self.computeMI(self.model.con_latent_dist, noise_c, noise_c_dist_info, 1)
-                mi_sum += cfg.TRAIN.COEFF.NOISE_C * noise_c_mi
-                self.log_vars.append(("MI_noise_c", noise_c_mi))
-            # ###Reconstruct c from real_x
-            if cfg.TRAIN.COEFF.REAL_C > TINY:
-                real_c_var_dist_info = self.model.reconstuct_context(real_shared_layers)
-                # self.log_vars.append(("hist_real_c", real_c_var_dist_info))
-                # TODO bprior=0
-                real_c_mi = self.computeMI(self.model.con_latent_dist, c, real_c_var_dist_info, 1)
-                mi_sum += cfg.TRAIN.COEFF.REAL_C * real_c_mi
-                self.log_vars.append(("MI_real_c", real_c_mi))
+            r_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_f, self.embeddings))
+            r_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_f, self.embeddings))
+            reconstructor_loss = r_loss_real + r_loss_fake
+            self.log_vars.append(("r_loss_fake", r_loss_fake))
+            self.log_vars.append(("r_loss_real", r_loss_real))
+            self.log_vars.append(("r_loss", reconstructor_loss))
 
-            discriminator_loss -= mi_sum
-            generator_loss -= mi_sum
-            self.log_vars.append(("MI", mi_sum))
+            d_loss_total = discriminator_loss + reconstructor_loss
+            g_loss_total = generator_loss + kl_loss + reconstructor_loss
 
-            # compute for discrete and continuous codes separately
-            # discrete:
-            # if len(self.model.reg_disc_latent_dist.dists) > 0:
-            #    disc_reg_z = self.model.disc_reg_z(reg_z)
-            #    disc_reg_dist_info = self.model.disc_reg_dist_info(fake_reg_z_dist_info)
-            #    disc_mi_est = self.computeMI(self.model.reg_disc_latent_dist, disc_reg_z, disc_reg_dist_info, bprior)
-
-            # #######Total loss for each network###############################
-            self.log_vars.append(("d_loss_total", discriminator_loss))
-            self.log_vars.append(("g_loss_total", generator_loss))
+            self.log_vars.append(("d_loss_total", d_loss_total))
+            self.log_vars.append(("g_loss_total", g_loss_total))
 
             all_vars = tf.trainable_variables()
 
@@ -234,17 +165,19 @@ class ConInfoGANTrainer(object):
                       var.name.startswith('g_')]
             r_vars = [var for var in all_vars if
                       var.name.startswith('r_')]
+            e_vars = [var for var in all_vars if
+                      var.name.startswith('e_')]
 
             discriminator_optimizer = tf.train.AdamOptimizer(self.discriminator_learning_rate, beta1=0.5)
             self.discriminator_trainer = pt.apply_optimizer(discriminator_optimizer,
-                                                            losses=[discriminator_loss],
+                                                            losses=[discriminator_loss + reconstructor_loss],
                                                             var_list=d_vars + r_vars)
 
             # Change by TX (2)
             generator_optimizer = tf.train.AdamOptimizer(self.generator_learning_rate, beta1=0.5)
             self.generator_trainer = pt.apply_optimizer(generator_optimizer,
-                                                        losses=[generator_loss],
-                                                        var_list=g_vars)
+                                                        losses=[generator_loss + kl_loss + reconstructor_loss],
+                                                        var_list=g_vars + e_vars)
 
             # encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
             # self.encoder_trainer = pt.apply_optimizer(encoder_optimizer,
@@ -252,7 +185,7 @@ class ConInfoGANTrainer(object):
             #                                           var_list=e_vars)
             # ****************************
 
-            all_sum = {'g': [], 'd': [], 'hist': [], 'others': []}
+            all_sum = {'g': [], 'd': [], 'r': [], 'hist': [], 'others': []}
             for k, v in self.log_vars:
                 if k.startswith('hist_'):
                     all_sum['hist'].append(tf.histogram_summary(k, v))
@@ -260,20 +193,21 @@ class ConInfoGANTrainer(object):
                     all_sum['g'].append(tf.scalar_summary(k, v))
                 elif k.startswith('d_'):
                     all_sum['d'].append(tf.scalar_summary(k, v))
-                # elif k.startswith('e_'):
-                #    all_sum['e'].append(tf.scalar_summary(k, v))
+                elif k.startswith('r_'):
+                    all_sum['r'].append(tf.scalar_summary(k, v))
                 else:
                     all_sum['others'].append(tf.scalar_summary(k, v))
 
             self.g_sum = tf.merge_summary(all_sum['g'])
             self.d_sum = tf.merge_summary(all_sum['d'])
+            self.r_sum = tf.merge_summary(all_sum['r'])
             self.hist_sum = tf.merge_summary(all_sum['hist'])
             # self.e_sum = tf.merge_summary(all_sum['e'])
             self.other_sum = tf.merge_summary(all_sum['others'])
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
-                self.visualization()
+                # self.visualization()
                 print("success")
 
     def computeMI(self, dist, reg_z, reg_dist_info, bprior):
@@ -464,22 +398,30 @@ class ConInfoGANTrainer(object):
                         # training d
                         images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         # print(type(masks), masks.shape)
+                        z1 = np.random.normal(0., 1., (self.batch_size, self.model.z_dim))
+                        z2 = np.random.normal(0., 1., (self.batch_size, self.model.c_dim))
                         feed_dict = {self.images: images,
                                      self.masks: masks.astype(np.float32),
-                                     self.embeddings: embeddings
+                                     self.embeddings: embeddings,
+                                     self.z: z1,
+                                     self.z_noise_c_var: z2
                                      }
-                        _, d_summary, log_vals, hist_summary, other_summary = sess.run(
-                            [self.discriminator_trainer, self.d_sum,
+                        _, d_summary, r_summary, log_vals, hist_summary, other_summary = sess.run(
+                            [self.discriminator_trainer, self.d_sum, self.r_sum,
                              log_vars, self.hist_sum, self.other_sum], feed_dict)
 
                         summary_writer.add_summary(d_summary, counter)
                         summary_writer.add_summary(hist_summary, counter)
                         summary_writer.add_summary(other_summary, counter)
+                        summary_writer.add_summary(r_summary, counter)
                         # training g&e
                         # images, masks, embeddings, _ = self.dataset.train.next_batch(self.batch_size)
                         # feed_dict = {self.images: images,
                         #                 self.masks: masks.astype(np.float32),
                         #                 self.embeddings: embeddings}
+                        _, g_summary = sess.run(
+                            [self.generator_trainer, self.g_sum], feed_dict
+                        )
                         _, g_summary = sess.run(
                             [self.generator_trainer, self.g_sum], feed_dict
                         )
@@ -499,7 +441,7 @@ class ConInfoGANTrainer(object):
                             print("Model saved in file: %s" % fn)
 
                     summary_writer.add_summary(self.epoch_sum_images(sess), counter)
-                    self.epoch_save_samples(sess, 8)
+                    # self.epoch_save_samples(sess, 8)
 
                     avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
 

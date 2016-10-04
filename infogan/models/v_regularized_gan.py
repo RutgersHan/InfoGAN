@@ -38,6 +38,7 @@ class ConRegularizedGAN(object):
         self.gf_dim = gf_dim
         self.df_dim = df_dim
         self.ef_dim = ef_dim
+        self.ef_dim = cfg.C_DIM
         assert all(isinstance(x, (Gaussian, Categorical, Bernoulli)) for x in self.reg_latent_dist.dists)
 
         self.reg_cont_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, Gaussian)])
@@ -53,19 +54,23 @@ class ConRegularizedGAN(object):
                 self.generator_template = self.generator()
             with tf.variable_scope("c_net"):
                 self.context_template = self.context_embedding()
-                self.feature_template = self.feature_extractor()
+                # self.feature_template = self.feature_extractor()
             with tf.variable_scope("r_net"):
-                self.context_reconstruct_template = self.context_reconstruction()
-                self.reg_reconstruct_template = self.reg_reconstruction()
+                # self.context_reconstruct_template = self.context_reconstruction()
+                # self.reg_reconstruct_template = self.reg_reconstruction()
+
+                self.reconstructor_shared_template = self.reconstructor_shared()
+                self.reconstructor_notshared_template = self.reconstructor_notshared()
         else:
             raise NotImplementedError
 
+    # TODO just use one layer
     def context_embedding(self):
         template = (pt.template("input").
-                    custom_fully_connected(self.ef_dim * 4).
+                    custom_fully_connected(cfg.C_DIM * 4).
                     fc_batch_norm().
                     apply(tf.nn.relu).
-                    custom_fully_connected(self.ef_dim * 2))
+                    custom_fully_connected(cfg.C_DIM * 2))
         return template
 
     def discriminator_shared(self):
@@ -94,6 +99,36 @@ class ConRegularizedGAN(object):
              custom_fully_connected(1))
 
         return discriminator_template
+
+    def reconstructor_shared(self):
+        last_conv_template = \
+            (pt.template("input").
+             custom_conv2d(self.df_dim, k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(leaky_rectify).
+             custom_conv2d(self.df_dim * 2, k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(leaky_rectify).
+             custom_conv2d(self.df_dim * 4, k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(leaky_rectify).
+             custom_conv2d(self.df_dim * 8, k_h=4, k_w=4)
+             )
+        shared_template = last_conv_template
+        return shared_template
+
+    def reconstructor_notshared(self):
+        # ####Use shared_template from discriminator as input
+        reconstructor_template = \
+            (pt.template("input").
+             conv_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(1024).
+             fc_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(cfg.GAN.EMBEDDING_DIM))
+
+        return reconstructor_template
 
     def feature_extractor(self):
         # Change by TX (3)
@@ -180,6 +215,9 @@ class ConRegularizedGAN(object):
     def get_discriminator_shared(self, x_var):
         return self.shared_template.construct(input=x_var)
 
+    def get_reconstructor_shared(self, x_var):
+        return self.reconstructor_shared_template.construct(input=x_var)
+
     def extract_features(self, shared_layers):
         return self.feature_template.construct(input=shared_layers)
 
@@ -195,6 +233,9 @@ class ConRegularizedGAN(object):
 
     def get_discriminator(self, shared_layers):
         return self.discriminator_notshared_template.construct(input=shared_layers)
+
+    def get_reconstructor(self, shared_layers):
+        return self.reconstructor_notshared_template.construct(input=shared_layers)
 
     def get_generator(self, z_var):
         return self.generator_template.construct(input=z_var)
