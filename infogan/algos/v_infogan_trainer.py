@@ -119,6 +119,11 @@ class ConInfoGANTrainer(object):
             d_loss_legit = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d, tf.ones_like(real_d)))
             d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_d, tf.zeros_like(fake_d)))
 
+            d_real_accuracy = self.get_accuracy(real_d, tf.ones_like(real_d, dtype=tf.int64))
+            d_fake_accuracy = self.get_accuracy(fake_d, tf.zeros_like(fake_d, dtype=tf.int64))
+            self.log_vars.append(("d_fake_accuracy", d_fake_accuracy))
+            self.log_vars.append(("d_real_accuracy", d_real_accuracy))
+
             discriminator_loss = d_loss_legit + d_loss_fake
             self.log_vars.append(("d_loss_fake", d_loss_fake))
             self.log_vars.append(("d_loss_real", d_loss_legit))
@@ -142,6 +147,10 @@ class ConInfoGANTrainer(object):
 
             real_f = self.model.get_reconstructor(real_re_shared_layers)
             fake_f = self.model.get_reconstructor(fake_re_shared_layers)
+            r_real_accuracy = self.get_accuracy(real_f, self.embeddings)
+            r_fake_accuracy = self.get_accuracy(fake_f, self.embeddings)
+            self.log_vars.append(("r_fake_accuracy", r_fake_accuracy))
+            self.log_vars.append(("r_real_accuracy", r_real_accuracy))
 
             r_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_f, self.embeddings))
             r_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_f, self.embeddings))
@@ -151,8 +160,8 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("r_loss", reconstructor_loss))
 
             d_loss_total = discriminator_loss + reconstructor_loss
-            g_loss_total = generator_loss + kl_loss + reconstructor_loss
-
+            # g_loss_total = generator_loss + kl_loss + reconstructor_loss
+            g_loss_total = generator_loss + reconstructor_loss
             self.log_vars.append(("d_loss_total", d_loss_total))
             self.log_vars.append(("g_loss_total", g_loss_total))
 
@@ -177,7 +186,8 @@ class ConInfoGANTrainer(object):
             # Change by TX (2)
             generator_optimizer = tf.train.AdamOptimizer(self.generator_learning_rate, beta1=0.5)
             self.generator_trainer = pt.apply_optimizer(generator_optimizer,
-                                                        losses=[generator_loss + kl_loss + reconstructor_loss],
+                                                        # losses=[generator_loss + kl_loss + reconstructor_loss],
+                                                        losses=[generator_loss + reconstructor_loss],
                                                         var_list=g_vars + e_vars)
 
             # encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
@@ -210,6 +220,14 @@ class ConInfoGANTrainer(object):
             with tf.variable_scope("model", reuse=True) as scope:
                 self.visualization()
                 print("success")
+
+    def get_accuracy(self, logits, ground_truth):
+        ground_truth = tf.cast(ground_truth, tf.int64)
+        prob = tf.sigmoid(logits)
+        prediction = tf.cast(tf.greater_equal(prob, 0.5), tf.int64)
+        correct_prediction = tf.equal(prediction, ground_truth)
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+        return accuracy
 
     def computeMI(self, dist, reg_z, reg_dist_info, bprior):
         # TODO: normalize by dimention ??
