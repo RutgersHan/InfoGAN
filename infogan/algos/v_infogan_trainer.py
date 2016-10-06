@@ -147,9 +147,9 @@ class ConInfoGANTrainer(object):
                 like_loss = self.compute_like_loss_from_D()
                 encoder_loss = kl_loss + like_loss
                 # ##Add like loss to ......
-                generator_loss += cfg.TRAIN.COEFF.LIKE * like_loss
+                # generator_loss += cfg.TRAIN.COEFF.LIKE * like_loss
                 # discriminator_loss += cfg.TRAIN.COEFF.LIKE * like_loss  # TODO: whether add this ??
-                self.log_vars.append(("g_d_like_loss_reweight", cfg.TRAIN.COEFF.LIKE * like_loss))
+                # self.log_vars.append(("g_d_like_loss_reweight", cfg.TRAIN.COEFF.LIKE * like_loss))
 
             # ####get discriminator_loss and generator_loss for BG##############
             # ####Different discriminators but the same generator###############
@@ -164,7 +164,7 @@ class ConInfoGANTrainer(object):
                 fg_like_loss = self.compute_like_loss_from_fg_D()
                 encoder_loss += fg_like_loss
                 # ##Add like loss to ......
-                generator_loss += cfg.TRAIN.COEFF.LIKE * fg_like_loss
+                # generator_loss += cfg.TRAIN.COEFF.LIKE * fg_like_loss
                 # discriminator_loss += cfg.TRAIN.COEFF.LIKE * fg_like_loss  # TODO: whether add this ??
 
             # #######Total loss for build#######################################
@@ -395,14 +395,14 @@ class ConInfoGANTrainer(object):
         fg_d_vars = [var for var in all_vars if
                      var.name.startswith('fg_')]
 
-        encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
-        self.encoder_trainer = pt.apply_optimizer(encoder_optimizer,
-                                                  losses=[encoder_loss],
-                                                  var_list=e_vars)
+        # encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
+        # self.encoder_trainer = pt.apply_optimizer(encoder_optimizer,
+        #                                          losses=[encoder_loss],
+        #                                          var_list=e_vars)
         generator_optimizer = tf.train.AdamOptimizer(self.generator_learning_rate, beta1=0.5)
         self.generator_trainer = pt.apply_optimizer(generator_optimizer,
-                                                    losses=[generator_loss],
-                                                    var_list=g_vars)
+                                                    losses=[encoder_loss + generator_loss],
+                                                    var_list=e_vars + g_vars)
         discriminator_optimizer = tf.train.AdamOptimizer(self.discriminator_learning_rate, beta1=0.5)
         self.discriminator_trainer = pt.apply_optimizer(discriminator_optimizer,
                                                         losses=[discriminator_loss],
@@ -650,53 +650,54 @@ class ConInfoGANTrainer(object):
                                      self.embeddings: embeddings,
                                      self.bg_images: bg_images
                                      }
-                        # ###TODO: Feed in once to save time
-                        feed_out = [self.discriminator_trainer,
-                                    self.bg_discriminator_trainer,
-                                    self.fg_discriminator_trainer,
-                                    # self.generator_trainer,
-                                    # self.encoder_trainer,
-                                    self.d_sum,
-                                    self.bg_d_sum,
-                                    self.fg_d_sum,
-                                    self.hist_sum,
-                                    log_vars,
-                                    ]
-                        _, _, _, d_summary, bg_d_summary, fg_d_summary,\
-                            hist_summary, log_vals = sess.run(feed_out, feed_dict)
-                        summary_writer.add_summary(d_summary, counter)
-                        summary_writer.add_summary(bg_d_summary, counter)
-                        summary_writer.add_summary(fg_d_summary, counter)
-                        summary_writer.add_summary(hist_summary, counter)
-                        # ###TODO: Feed in separately
-                        # _, d_summary, log_vals, hist_summary = sess.run(
-                        #     [self.discriminator_trainer, self.d_sum,
-                        #      log_vars, self.hist_sum], feed_dict)
-                        # summary_writer.add_summary(d_summary, counter)
-                        # summary_writer.add_summary(hist_summary, counter)
-                        # # training g&e&bg_d&fg_d
-                        # _, bg_d_summary = sess.run(
-                        #     [self.bg_discriminator_trainer, self.bg_d_sum], feed_dict
-                        # )
-                        # summary_writer.add_summary(bg_d_summary, counter)
-                        # #
-                        # _, fg_d_summary = sess.run(
-                        #     [self.fg_discriminator_trainer, self.fg_d_sum], feed_dict
-                        # )
-                        # summary_writer.add_summary(fg_d_summary, counter)
-                        # # ###*****************
+                        if i % 6 == 0:
+                            # # ###TODO: Feed in once to save time
+                            # feed_out = [self.discriminator_trainer,
+                            #             self.bg_discriminator_trainer,
+                            #             self.fg_discriminator_trainer,
+                            #             # self.generator_trainer,
+                            #             # self.encoder_trainer,
+                            #             self.d_sum,
+                            #             self.bg_d_sum,
+                            #             self.fg_d_sum,
+                            #             self.hist_sum,
+                            #             log_vars,
+                            #             ]
+                            # _, _, _, d_summary, bg_d_summary, fg_d_summary,\
+                            #     hist_summary, log_vals = sess.run(feed_out, feed_dict)
+                            # summary_writer.add_summary(d_summary, counter)
+                            # summary_writer.add_summary(bg_d_summary, counter)
+                            # summary_writer.add_summary(fg_d_summary, counter)
+                            # summary_writer.add_summary(hist_summary, counter)
+                            # ###TODO: Feed in separately
+                            _, d_summary, log_vals, hist_summary = sess.run(
+                                [self.discriminator_trainer, self.d_sum,
+                                 log_vars, self.hist_sum], feed_dict)
+                            summary_writer.add_summary(d_summary, counter)
+                            summary_writer.add_summary(hist_summary, counter)
+                            # training g&e&bg_d&fg_d
+                            _, bg_d_summary = sess.run(
+                                [self.bg_discriminator_trainer, self.bg_d_sum], feed_dict
+                            )
+                            summary_writer.add_summary(bg_d_summary, counter)
+                            #
+                            _, fg_d_summary = sess.run(
+                                [self.fg_discriminator_trainer, self.fg_d_sum], feed_dict
+                            )
+                            summary_writer.add_summary(fg_d_summary, counter)
+                            all_log_vals.append(log_vals)
+                            # # ###*****************
                         #
-                        _, g_summary = sess.run(
-                            [self.generator_trainer, self.g_sum], feed_dict
+                        _, g_summary, e_summary = sess.run(
+                            [self.generator_trainer, self.g_sum, self.e_sum], feed_dict
                         )
                         summary_writer.add_summary(g_summary, counter)
                         #
-                        _, e_summary = sess.run(
-                            [self.encoder_trainer, self.e_sum], feed_dict
-                        )
+                        # _, e_summary = sess.run(
+                        #    [self.encoder_trainer, self.e_sum], feed_dict
+                        # )
                         summary_writer.add_summary(e_summary, counter)
 
-                        all_log_vals.append(log_vals)
                         counter += 1
                         if counter % self.snapshot_interval == 0:
                             snapshot_name = "%s_%s" % (self.exp_name, str(counter))
