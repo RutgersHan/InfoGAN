@@ -685,8 +685,8 @@ class ConInfoGANTrainer(object):
                             #     [self.fg_discriminator_trainer, self.fg_d_sum], feed_dict
                             # )
                             # summary_writer.add_summary(fg_d_summary, counter)
-                            # all_log_vals.append(log_vals)
                             # # ###*****************
+                            all_log_vals.append(log_vals)
                         #
                         _, g_summary, e_summary = sess.run(
                             [self.generator_trainer, self.g_sum, self.e_sum], feed_dict
