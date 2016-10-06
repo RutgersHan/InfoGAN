@@ -152,6 +152,7 @@ class TextDataset(object):
             array_embeddings = np.array([
                 embedding for embedding in embeddings])
             # array_labels = np.array([label for label in labels])
+            # print(array_embeddings.shape)
 
             self.image_dim = height * width * depth
             self.image_shape = [height, width, depth]

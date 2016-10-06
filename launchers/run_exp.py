@@ -74,7 +74,6 @@ if __name__ == "__main__":
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
 
     ckt_logs_dir = "ckt_logs/%s/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
-    mkdir_p(ckt_logs_dir)
 
     datadir = 'Data/%s' % cfg.DATASET_NAME
     filename_test = '%s/%s_test.pickle' % (datadir, cfg.FILENAME)
@@ -92,6 +91,8 @@ if __name__ == "__main__":
 
     # for i in range(dataset.fixedvisual_train.embeddings.shape[0]):
     #     print(dataset.fixedvisual_train.embeddings[i])
+
+    mkdir_p(ckt_logs_dir)
 
     latent_spec, con_latent_spec = get_latent_spec()
 
