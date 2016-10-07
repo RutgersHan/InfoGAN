@@ -182,7 +182,7 @@ class Categorical(Distribution):
 
 
 class Gaussian(Distribution):
-    def __init__(self, dim, fix_std=False):
+    def __init__(self, dim, fix_std=True):
         self._dim = dim
         self._fix_std = fix_std
 
@@ -247,6 +247,7 @@ class Gaussian(Distribution):
             stddev = tf.ones_like(mean)
         else:
             stddev = tf.sqrt(tf.exp(flat_dist[:, self.dim:]))
+            # stddev = tf.sqrt(tf.exp(flat_dist[:, self.dim:]))
         return dict(mean=mean, stddev=stddev)
 
 

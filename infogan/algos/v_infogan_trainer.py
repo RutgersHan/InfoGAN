@@ -96,9 +96,13 @@ class ConInfoGANTrainer(object):
         if bencode:
             c_mean_logsigma = self.model.generate_fg_condition(self.embeddings)
             self.log_vars.append(("fg_hist_c_mean", c_mean_logsigma[0]))
-            self.log_vars.append(("fg_hist_c_log_sigma", c_mean_logsigma[0]))
-            c_sample = self.model.con_latent_dist.sample_prior(self.batch_size)
-            c = c_mean_logsigma[0] + c_mean_logsigma[1] * c_sample
+            self.log_vars.append(("fg_hist_c_log_sigma", c_mean_logsigma[1]))
+            # c_sample = self.model.con_latent_dist.sample_prior(self.batch_size)
+            # c = c_mean_logsigma[0] + c_mean_logsigma[1] * c_sample
+            mean = c_mean_logsigma[0]
+            epsilon = tf.random_normal(tf.shape(mean))
+            stddev = tf.exp(c_mean_logsigma[1])
+            c = mean + stddev * epsilon
 
             kl_loss = KL_loss(c_mean_logsigma[0], c_mean_logsigma[1])
         else:
@@ -196,8 +200,11 @@ class ConInfoGANTrainer(object):
         self.log_vars.append(("fg_d_loss_fake", fg_d_loss_fake))
         self.log_vars.append(("fg_d_loss_noise", fg_d_loss_noise))
 
-        fg_generator_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_fake_d, tf.ones_like(fg_fake_d)))
-
+        fg_g_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_fake_d, tf.ones_like(fg_fake_d)))
+        fg_g_loss_noise = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_noise_d, tf.ones_like(fg_noise_d)))
+        fg_generator_loss = fg_g_loss_fake + fg_g_loss_noise
+        self.log_vars.append(("fg_g_loss_fake", fg_g_loss_fake))
+        self.log_vars.append(("fg_g_loss_noise", fg_g_loss_noise))
         return fg_discriminator_loss, fg_generator_loss
 
     def prepare_trainer(self, fg_encoder_loss, fg_generator_loss, fg_discriminator_loss):
@@ -260,32 +267,31 @@ class ConInfoGANTrainer(object):
         # c sampled from encoded text
         fg_c, _ = self.sample_encoded_context(bencode=True)
         fg_fake_x = self.model.get_fg_generator(fg_c)
-        img_sum1 = self.visualize_one_superimage(fg_fake_x[:64, :, :, :],
-                                                 self.images[:64, :, :, :],
-                                                 self.fg_images[:64, :, :, :],
-                                                 8, "train_FG_on_text")
-        img_sum2 = self.visualize_one_superimage(fg_fake_x[64:128, :, :, :],
-                                                 self.images[64:128, :, :, :],
-                                                 self.fg_images[64:128, :, :, :],
-                                                 8, "test_FG_on_text")
+        fg_fake_sum1 = self.visualize_one_superimage(fg_fake_x[:64, :, :, :],
+                                                     self.images[:64, :, :, :],
+                                                     self.fg_images[:64, :, :, :],
+                                                     8, "train_FG_on_text")
+        fg_fake_sum2 = self.visualize_one_superimage(fg_fake_x[64:128, :, :, :],
+                                                     self.images[64:128, :, :, :],
+                                                     self.fg_images[64:128, :, :, :],
+                                                     8, "test_FG_on_text")
 
         # c randomly samples from Gaussian
         fg_noise_c = self.model.con_latent_dist.sample_prior(self.batch_size)
         fg_noise_x = self.model.get_fg_generator(fg_noise_c)
-        img_sum3 = self.visualize_one_superimage(fg_noise_x[:64, :, :, :],
-                                                 self.images[:64, :, :, :],
-                                                 self.fg_images[:64, :, :, :],
-                                                 8, "FG_on_noise")
+        fg_noise_sum = self.visualize_one_superimage(fg_noise_x[:64, :, :, :],
+                                                     self.images[:64, :, :, :],
+                                                     self.fg_images[:64, :, :, :],
+                                                     8, "FG_on_noise")
 
-        self.image_summary = tf.merge_summary([img_sum1, img_sum2, img_sum3])
+        self.image_summary = tf.merge_summary([fg_fake_sum1, fg_fake_sum2, fg_noise_sum])
 
-    def preprocess(self, embeddings):
+    def preprocess(self, x):
         # make sure every row with 10 column have the same embeddings
         for i in range(8):
             for j in range(1, 8):
-                embeddings[i * 8 + j] = embeddings[i * 8]
-                # images[i * 8 + j] = images[i * 8]
-        return embeddings
+                x[i * 8 + j] = x[i * 8]
+        return x
 
     def go_save(self, samples, metadata, path, dataset, num_copy):
         row_imgs = {}
@@ -306,6 +312,8 @@ class ConInfoGANTrainer(object):
             scipy.misc.imsave('%s/%s_%s_FG.jpg' % (path, key, dataset), img)
 
     def epoch_save_samples(self, sess, num_copy):
+        # same embedding each row (num_copy), give same mean and log_sigma
+        # but different sampled fg_c from sample_encoded_context()
         embeddings_train = np.repeat(self.dataset.fixedvisual_train.embeddings, num_copy, axis=0)
         embeddings_test = np.repeat(self.dataset.fixedvisual_test.embeddings, num_copy, axis=0)
         embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
@@ -327,11 +335,19 @@ class ConInfoGANTrainer(object):
 
     def epoch_sum_images(self, sess):
         images_train, masks_train, embeddings_train, _, _ = self.dataset.train.next_batch(64)
+        images_train = self.preprocess(images_train)
+        masks_train = self.preprocess(masks_train)
+        embeddings = self.preprocess(embeddings_train)
+
         images_test, masks_test, embeddings_test, _, _ = self.dataset.test.next_batch(64)
+        images_test = self.preprocess(images_test)
+        masks_test = self.preprocess(masks_test)
+        embeddings = self.preprocess(embeddings)
 
         images = np.concatenate([images_train, images_test], axis=0)
         masks = np.concatenate([masks_train, masks_test], axis=0)
         embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
+
         if self.batch_size > 128:
             images_pad, masks_pad, embeddings_pad, _, _ = self.dataset.test.next_batch(self.batch_size - 128)
             images = np.concatenate([images, images_pad], axis=0)
