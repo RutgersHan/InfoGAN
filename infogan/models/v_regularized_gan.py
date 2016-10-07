@@ -46,23 +46,13 @@ class ConRegularizedGAN(object):
         self.image_size = image_shape[0]
         self.image_shape = image_shape
         if cfg.GAN.NETWORK_TYPE == "default":
-            with tf.variable_scope("bg_d_net"):
-                self.bg_shared_template = self.discriminator_shared()
-                self.bg_discriminator_notshared_template = self.discriminator_notshared()
             with tf.variable_scope("fg_d_net"):
                 self.fg_shared_template = self.discriminator_shared()
                 self.fg_discriminator_notshared_template = self.discriminator_notshared()
-            with tf.variable_scope("d_net"):
-                self.shared_template = self.discriminator_shared()
-                self.discriminator_notshared_template = self.discriminator_notshared()
-            with tf.variable_scope("g_net"):
-                self.generator_template = self.generator()
-            with tf.variable_scope("e_net"):
-                self.context_template = self.context_embedding()
-                self.feature_template = self.feature_extractor()
-            with tf.variable_scope("r_net"):
-                self.context_reconstruct_template = self.context_reconstruction()
-                self.reg_reconstruct_template = self.reg_reconstruction()
+            with tf.variable_scope("fg_g_net"):
+                self.fg_generator_template = self.generator()
+            with tf.variable_scope("fg_e_net"):
+                self.fg_context_template = self.context_embedding()
         else:
             raise NotImplementedError
 
@@ -101,48 +91,6 @@ class ConRegularizedGAN(object):
 
         return discriminator_template
 
-    def feature_extractor(self):
-        # Change by TX (3)
-        # ####Use shared_template from discriminator as input
-
-        # ####Extract middle-level conv features with spatial information ####
-        feature_template = pt.template("input")
-
-        '''
-        # ####Extract high-level fc layer features
-        # Not work <-- because the most trival solution for this branch is 0 ####
-        feature_template = \
-            (pt.template("input").
-             conv_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(self.df_dim * 16))
-        '''
-        return feature_template
-
-    def reg_reconstruction(self):
-        # ####Use shared_template from discriminator as input
-        reconstruct_template = \
-            (pt.template("input").
-             conv_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(512).
-             fc_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(self.reg_latent_dist.dist_flat_dim))
-        return reconstruct_template
-
-    def context_reconstruction(self):
-        # ####Use shared_template from discriminator as input
-        reconstruct_template = \
-            (pt.template("input").
-             conv_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(512).
-             fc_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(self.con_latent_dist.dist_flat_dim))
-        return reconstruct_template
-
     def generator(self):
         s = self.image_size
         s2, s4, s8, s16 = int(s / 2), int(s / 4), int(s / 8), int(s / 16)
@@ -165,48 +113,12 @@ class ConRegularizedGAN(object):
              apply(tf.nn.tanh))
         return generator_template
 
-    def generate_for_visualization(self, image_num, embedding_shape):
-        embeddings = tf.placeholder(
-            tf.float32, [None] + embedding_shape,
-            name='conditional_embeddings'
-        )
-        z_var = self.latent_dist.sample_prior(image_num)
-        c_var = self.generate_condition(embeddings)
-        z_c_var = tf.concat(1, [z_var, c_var])
-        generated_images = self.generate(z_c_var)
-        return embeddings, generated_images
-
-    def generate_condition(self, c_var):
-        conditions = self.context_template.construct(input=c_var)
+    def generate_fg_condition(self, c_var):
+        conditions = self.fg_context_template.construct(input=c_var)
         mean = conditions[:, :self.ef_dim]
         log_sigma = conditions[:, self.ef_dim:]
         condition_list = [mean, log_sigma]
         return condition_list
-
-    def get_discriminator_shared(self, x_var):
-        return self.shared_template.construct(input=x_var)
-
-    def extract_features(self, shared_layers):
-        return self.feature_template.construct(input=shared_layers)
-
-    def reconstuct_context(self, shared_layers):
-        dist_flat = self.context_reconstruct_template.construct(input=shared_layers)
-        dist_info = self.con_latent_dist.activate_dist(dist_flat)
-        return dist_info
-
-    def reconstuct_reg(self, shared_layers):
-        dist_flat = self.reg_reconstruct_template.construct(input=shared_layers)
-        dist_info = self.reg_latent_dist.activate_dist(dist_flat)
-        return dist_info
-
-    def get_discriminator(self, shared_layers):
-        return self.discriminator_notshared_template.construct(input=shared_layers)
-
-    def get_bg_discriminator_shared(self, x_var):
-        return self.bg_shared_template.construct(input=x_var)
-
-    def get_bg_discriminator(self, shared_layers):
-        return self.bg_discriminator_notshared_template.construct(input=shared_layers)
 
     def get_fg_discriminator_shared(self, x_var):
         return self.fg_shared_template.construct(input=x_var)
@@ -214,8 +126,12 @@ class ConRegularizedGAN(object):
     def get_fg_discriminator(self, shared_layers):
         return self.fg_discriminator_notshared_template.construct(input=shared_layers)
 
-    def get_generator(self, z_var):
-        return self.generator_template.construct(input=z_var)
+    def get_fg_generator(self, z_var):
+        return self.fg_generator_template.construct(input=z_var)
+
+
+
+
 
     def disc_reg_z(self, reg_z_var):
         ret = []

@@ -73,7 +73,7 @@ if __name__ == "__main__":
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
 
-    ckt_logs_dir = "ckt_logs/%s/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
+    ckt_logs_dir = "ckt_logs_fg/%s/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
 
     datadir = 'Data/%s' % cfg.DATASET_NAME
     filename_test = '%s/%s_test.pickle' % (datadir, cfg.FILENAME)
