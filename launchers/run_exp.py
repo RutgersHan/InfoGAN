@@ -88,7 +88,6 @@ if __name__ == "__main__":
         dataset.train = dataset.get_data(filename_train)
     else:
         NotImplementedError
-
     # for i in range(dataset.fixedvisual_train.embeddings.shape[0]):
     #     print(dataset.fixedvisual_train.embeddings[i])
 

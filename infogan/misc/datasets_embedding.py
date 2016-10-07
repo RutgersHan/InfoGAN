@@ -9,7 +9,7 @@ import random
 
 
 class Dataset(object):
-    def __init__(self, images, masks, embeddings, bg_images=None, labels=None, flip_flag=True):
+    def __init__(self, images, masks=None, embeddings=None, bg_images=None, labels=None, flip_flag=True):
         self._images = images
         self._masks = masks
         self._embeddings = embeddings
@@ -85,8 +85,10 @@ class Dataset(object):
             perm = np.arange(self._num_examples)
             np.random.shuffle(perm)
             self._images = self._images[perm]
-            self._masks = self._masks[perm]
-            self._embeddings = self._embeddings[perm]
+            if self._masks is not None:
+                self._masks = self._masks[perm]
+            if self._embeddings is not None:
+                self._embeddings = self._embeddings[perm]
             if self._bg_images is not None:
                 self._bg_images = self.bg_images[perm]
             if self._labels is not None:
@@ -99,9 +101,17 @@ class Dataset(object):
         # if the input image has values in [0, 255], use this self.transform()
         # sampled_images = self.transform(self._images[start:end])
         sampled_images = self._images[start:end]
-        sampled_masks = self._masks[start:end]
-        sampled_embeddings = self.sample_embeddings(self._embeddings[start:end])
-        ret_list = [sampled_images, sampled_masks, sampled_embeddings]
+        ret_list = [sampled_images]
+        if self._masks is not None:
+            sampled_masks = self._masks[start:end]
+            ret_list.append(sampled_masks)
+        else:
+            ret_list.append(None)
+        if self._embeddings is not None:
+            sampled_embeddings = self.sample_embeddings(self._embeddings[start:end])
+            ret_list.append(sampled_embeddings)
+        else:
+            ret_list.append(None)
         if self._bg_images is not None:
             sampled_bg_images = self.sample_bg_images(self._bg_images[start:end])
             ret_list.append(sampled_bg_images)
@@ -131,7 +141,6 @@ class TextDataset(object):
     def __init__(self, workdir):
         self.image_shape = [64, 64, 3]
         self.image_dim = 64 * 64 * 3
-        self.embedding_shape = [4800]
         self.train = None
         self.test = None
         self.fixedvisual_train = VisualizeData(workdir, 'train')
@@ -144,20 +153,19 @@ class TextDataset(object):
             # [height, width, depth, images, masks, bg_images,
             # attr_embeddings, text_embeddings, attributes, labels]
             # all images have values in [-1, 1]
-            height, width, depth, images, masks, bg_images,\
-                _, embeddings, _, _ = pickle.load(f)
+            height, width, depth, images, masks, _,\
+                _, _, _, _ = pickle.load(f)
             array_images = np.array([image for image in images])
             array_masks = np.array([mask for mask in masks])
-            array_bg_images = np.array([img for img in bg_images])
-            array_embeddings = np.array([
-                embedding for embedding in embeddings])
+            # array_bg_images = np.array([img for img in bg_images])
+            # array_embeddings = np.array([
+            #    embedding for embedding in embeddings])
             # array_labels = np.array([label for label in labels])
             # print(array_embeddings.shape)
 
             self.image_dim = height * width * depth
             self.image_shape = [height, width, depth]
-            self.embedding_shape = [array_embeddings.shape[-1]]
-            return Dataset(array_images, array_masks, array_embeddings, array_bg_images, None)
+            return Dataset(array_images, array_masks, None, None, None)
 
 
 class VisualizeAttrData(object):
