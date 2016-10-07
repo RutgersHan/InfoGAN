@@ -162,8 +162,8 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("r_loss", reconstructor_loss))
 
             d_loss_total = discriminator_loss + reconstructor_loss
-            # g_loss_total = generator_loss + kl_loss + reconstructor_loss
-            g_loss_total = generator_loss + reconstructor_loss
+            g_loss_total = generator_loss + kl_loss + reconstructor_loss
+            # g_loss_total = generator_loss + reconstructor_loss
             self.log_vars.append(("d_loss_total", d_loss_total))
             self.log_vars.append(("g_loss_total", g_loss_total))
 
@@ -287,11 +287,11 @@ class ConInfoGANTrainer(object):
         # get the mean
         c = c[0]
         # z_row = self.model.latent_dist.sample_prior(8)
-        z_row = np.random.normal(0., 1., (8, self.z_dim)).astype(np.float32)
+        z_row = tf.random_normal([8, self.z_dim], 0., 1., dtype=tf.float32)
         z = tf.tile(z_row, tf.constant([16, 1]))
         if self.batch_size > 128:
             # z_pad = self.model.latent_dist.sample_prior(self.batch_size - 128)
-            z_pad = np.random.normal(0., 1., (self.batch_size - 128, self.z_dim)).astype(np.float32)
+            z_pad = tf.random_normal([self.batch_size - 128, self.z_dim], 0., 1., dtype=tf.float32)
             z = tf.concat(0, [z, z_pad])
         z_c = tf.concat(1, [c, z])
         imgs = self.model.get_generator(z_c)
@@ -304,7 +304,7 @@ class ConInfoGANTrainer(object):
                                                  tf.expand_dims(self.masks[64:128, :, :], 3),
                                                  8, "test_image_on_text")
 
-        noise_c = np.random.normal(0, 1, (self.batch_size, self.c_dim)).astype(np.float32)
+        noise_c = tf.random_normal([self.batch_size, self.c_dim], 0., 1., dtype=tf.float32)
         noise_z_c = tf.concat(1, [noise_c, z])
         noise_imgs = self.model.get_generator(noise_z_c)
         img_sum3 = self.visualize_one_superimage(noise_imgs[:64, :, :, :],
@@ -384,8 +384,8 @@ class ConInfoGANTrainer(object):
         feed_dict = {self.images: images,
                      self.masks: masks.astype(np.float32),
                      self.embeddings: embeddings,
-                     self.z: z1,
-                     self.z_noise_c_var: z2
+                     # self.z: z1,
+                     # self.z_noise_c_var: z2
                      }
         return sess.run(self.image_summary, feed_dict)
 
