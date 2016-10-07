@@ -247,7 +247,7 @@ class ConInfoGANTrainer(object):
             row_real_fg = [img]
             for col in range(rows):
                 row_img.append(img_var[row * rows + col, :, :, :])
-                row_real_fg.append(fg_images[row * rows, :, :, :])
+                row_real_fg.append(fg_images[row * rows + col, :, :, :])
             # each rows is 1realimage +10_fakeimage
             stacked_img.append(tf.concat(1, row_img))
             stacked_real_fg.append(tf.concat(1, row_real_fg))

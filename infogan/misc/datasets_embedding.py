@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 import numpy as np
 import pickle
 import random
+from sklearn import preprocessing
 
 
 class Dataset(object):
@@ -62,8 +63,14 @@ class Dataset(object):
             return np.squeeze(embeddings)
         else:
             batch_size, embedding_num, _ = embeddings.shape
-            randix = np.random.randint(embedding_num, size=batch_size)
-            return np.squeeze(embeddings[np.arange(batch_size), randix, :])
+            # randix = np.random.randint(embedding_num, size=batch_size)
+            # return np.squeeze(embeddings[np.arange(batch_size), randix, :])
+            # Take every 5 captions to compute the mean vector
+            sampled_embeddings = []
+            randix = np.random.randint(2, embedding_num - 2, size=batch_size)
+            for i in range(batch_size):
+                sampled_embeddings.append(np.mean(embeddings[i, randix[i] - 2:randix[i] + 2, :], axis=0))
+            return np.array(sampled_embeddings)
 
     def sample_bg_images(self, bg_images):
         # print(bg_images.shape)
@@ -149,6 +156,13 @@ class TextDataset(object):
         # print(self.fixedvisual_train.filenames)
         # print(self.fixedvisual_test.filenames)
 
+    def normalize_array(self, x):
+        old_shape = x.shape
+        x_reshaped = np.reshape(x, (-1, old_shape[-1]))
+        x_normalized = preprocessing.normalize(x_reshaped, norm='l2', axis=1)
+        x_normalized = np.reshape(x_normalized, old_shape)
+        return x_normalized
+
     def get_data(self, pickle_path, flip_flag=True):
         with open(pickle_path, 'rb') as f:
             # [height, width, depth, images, masks, bg_images,
@@ -159,11 +173,11 @@ class TextDataset(object):
             array_images = np.array([image for image in images])
             array_masks = np.array([mask for mask in masks])
             # array_bg_images = np.array([img for img in bg_images])
-            array_embeddings = np.array([
+            array_embeddings = np.array([  # every 2400D has alreay been L2 Normalized
                 embedding for embedding in embeddings])
             self.embedding_shape = [array_embeddings.shape[-1]]
-            # array_labels = np.array([label for label in labels])
             # print(array_embeddings.shape)
+            # array_labels = np.array([label for label in labels])
 
             self.image_dim = height * width * depth
             self.image_shape = [height, width, depth]
