@@ -101,7 +101,8 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("hist_log_sigma", c[1]))
             kl_loss = KL_loss(c[0], c[1])
             self.log_vars.append(("kl_loss", kl_loss))
-            c_sampled = c[0] + c[1] * self.z_noise_c_var
+            c_sampled = c[0] + tf.exp(c[1]) * self.z_noise_c_var
+            self.log_vars.append(("hist_sampled", c_sampled))
             z_c = tf.concat(1, [c_sampled, self.z])
 
 
@@ -154,7 +155,8 @@ class ConInfoGANTrainer(object):
 
             r_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_f, self.embeddings))
             r_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_f, self.embeddings))
-            reconstructor_loss = r_loss_real + r_loss_fake
+            # reconstructor_loss = r_loss_real + r_loss_fake
+            reconstructor_loss = r_loss_real
             self.log_vars.append(("r_loss_fake", r_loss_fake))
             self.log_vars.append(("r_loss_real", r_loss_real))
             self.log_vars.append(("r_loss", reconstructor_loss))
@@ -186,8 +188,8 @@ class ConInfoGANTrainer(object):
             # Change by TX (2)
             generator_optimizer = tf.train.AdamOptimizer(self.generator_learning_rate, beta1=0.5)
             self.generator_trainer = pt.apply_optimizer(generator_optimizer,
-                                                        # losses=[generator_loss + kl_loss + reconstructor_loss],
-                                                        losses=[generator_loss + reconstructor_loss],
+                                                        losses=[generator_loss + kl_loss + reconstructor_loss],
+                                                        # losses=[generator_loss + reconstructor_loss],
                                                         var_list=g_vars + e_vars)
 
             # encoder_optimizer = tf.train.AdamOptimizer(self.encoder_learning_rate, beta1=0.5)
