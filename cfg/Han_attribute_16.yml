@@ -1,0 +1,39 @@
+CONFIG_NAME: 'Han_attribute1'
+
+DATASET_NAME: 'birds'
+FILENAME: 'birds64image_mask_attr'
+GPU_ID: 1
+Z_DIM: 16
+C_DIM: 16
+
+TRAIN:
+    BATCH_SIZE: 256
+    UPDATES_PER_EPOCH: 50
+    MAX_EPOCH: 3000
+    SNAPSHOT_INTERVAL: 2000
+    # PRETRAINED_MODEL: 'ckt_logs/birds/mi_like_test1_2016_10_03_00_12_14/model_12000.ckpt'
+    DISCRIMINATOR_LR: 0.0002
+    GENERATOR_LR: 0.0002
+    ENCODER_LR: 0.0002
+    MASK_FLAG: True
+    COEFF:
+        FAKE_REG_Z: 1.0
+        FAKE_C: 1.0
+        NOISE_REG_Z: 1.0
+        NOISE_C: 1.0
+        REAL_C: 1.0
+        LIKE: 1.0
+GAN:
+    LATENT_SPEC:
+        UNIFORM_FLAG: True
+        UNIFORM:
+            REG: False
+            DIM: 1
+        CAT_FLAG: True
+        CAT:
+            REG: True
+            DIM: 16
+    CON_LATENT_SPEC:
+        BERNOULLI_FLAG: True
+        BERNOULLI:
+            DIM: 312
