@@ -18,7 +18,7 @@ import pandas as pd
 # TODO: 1. current label is temporary, need to change according to real label
 #       2. Current, only split the data into train, need to handel train, test
 
-IMSIZE = 64
+IMSIZE = 128
 FLOWER_DIR = '/home/han/Documents/CVPR2017/data/flowers'
 BIRD_DIR = '/home/tao/deep_learning/CVPR2017/Han/InfoGAN/Data/birds'
 
@@ -110,8 +110,11 @@ def convert_flowers_dataset_tf(data_dir, train_ratio=0.75):
     writer.close()
 
 
-def load_mask(data_dir):
-    filenames_masks = sio.loadmat(os.path.join(data_dir, 'mask_cropped.mat'))
+def load_mask(data_dir, bbox):
+    if bbox:
+        filenames_masks = sio.loadmat(os.path.join(data_dir, 'mask_cropped.mat'))
+    else:
+        filenames_masks = sio.loadmat(os.path.join(data_dir, 'mask.mat'))
     filenames = filenames_masks['filenames']
     masks = filenames_masks['masks']
     print(type(filenames[0][0]), type(filenames[0][0][0]), filenames[0][0][0])
@@ -120,6 +123,7 @@ def load_mask(data_dir):
     mask_dic = {}
     for i in range(len(filenames)):
         key = filenames[i][0][0]
+        # print key
         data = masks[i][0]
         mask_dic[key] = data
     return mask_dic
@@ -210,9 +214,9 @@ def convert_birds_dataset_pickle(data_dir, train_ratio=0.75):
 
 def crop_background_images(f_name, imsize, img_id):
     img = scipy.misc.imread(f_name)
-    # from [0, 255] to [-1, 1]
     img = np.array(img) / 127.5 - 1.
     img = colorize(img)
+
     # crop background images from the original images
     bg_imgs = []
     h = img.shape[0]
@@ -228,8 +232,7 @@ def crop_background_images(f_name, imsize, img_id):
     return bg_imgs
 
 
-def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
-    # text embeddings
+def get_text_embedding(data_dir):
     h = h5py.File(os.path.join(data_dir, 'bird_tv.hdf5'))
     text_captions = {}
     for ds in h.iteritems():
@@ -240,28 +243,19 @@ def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
             text_captions[image_path] = np.array(ds2[1])
             # print(image_path, text_captions[image_path].shape)
             # print(text_captions[image_path][:10])
-            # return
+    print('text_embedding: ', len(text_captions))
+    return text_captions
 
-    # <class_id> <class_name>
-    class_list = pd.read_csv(os.path.join(data_dir, 'classes.txt'),
-                             delim_whitespace=True, header=None)[1].tolist()
-    print('class_list', len(class_list), class_list[:5])
 
+def get_attribute_vector(data_dir, img_filenames):
     captions = {}
     attributes_strings = {}
-    image_lists = {}
-    for class_name in class_list:
-        image_lists[class_name] = []
-    # <image_id> <image_name>
-    img_filenames = pd.read_csv(os.path.join(data_dir, 'images.txt'),
-                                delim_whitespace=True, header=None)[1].tolist()
     arr_attributes = sio.loadmat(os.path.join(data_dir, 'attributesVec.mat'))['attributesVec']
-    print('arr_attributes', type(arr_attributes), arr_attributes.shape)
+    print('arr_attributes: ', arr_attributes.shape)
     attributesShortNames = pd.read_csv(os.path.join(data_dir, 'attributesShortNames.txt'),
                                        delim_whitespace=True, header=None)
     for i in xrange(len(img_filenames)):
         name = img_filenames[i]
-        image_lists[name[:name.find('/')]].append(name)
         captions[name] = arr_attributes[i]
         attributes_strings[name] = []
         s = ''
@@ -281,7 +275,21 @@ def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
                     s += ';' + row[2]
             # print s
             attributes_strings[name].append(s)
+    return captions, attributes_strings
 
+
+def get_icml16_text_embedding(data_dir):
+    with open(os.path.join(data_dir, 'icml16_text_embedding.p'), 'rb') as f:
+        embeddings = pickle.load(f)
+        print('text_embedding: ', len(embeddings))
+    return embeddings
+
+
+def get_class_image_list(data_dir, train_ratio):
+    # <class_id> <class_name>
+    class_list = pd.read_csv(os.path.join(data_dir, 'classes.txt'),
+                             delim_whitespace=True, header=None)[1].tolist()
+    print('class_list', len(class_list), class_list[:5])
     # Devide into train and test dataset
     class_list.sort()
     training_num = int(len(class_list) * train_ratio)
@@ -289,80 +297,170 @@ def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
     test_class_list = class_list[training_num:]
     print('training_classes:', len(training_class_list), 'test_classes', len(test_class_list))
 
-    btrain = 0
+    # <image_id> <image_name>
+    img_filenames = pd.read_csv(os.path.join(data_dir, 'images.txt'),
+                                delim_whitespace=True, header=None)[1].tolist()
+    image_lists = {}
+    for class_name in class_list:
+        image_lists[class_name] = []
+    for i in xrange(len(img_filenames)):
+        name = img_filenames[i]
+        image_lists[name[:name.find('/')]].append(name)
+    return training_class_list, test_class_list, image_lists, img_filenames
 
-    height = IMSIZE
-    width = IMSIZE
-    depth = 3
 
+def save_data(class_list, image_lists, data_dir, bbox, bimg, bbgimg,
+              filename_mask_dic, attr_captions, attr_strings,
+              text_captions, icml16_text_captions, blabel, outpath):
     images = []
     masks = []
     bg_images = []
-    attr_embeddings = []
     text_embeddings = []
-
+    icml16_text_embeddings = []
+    attr_embeddings = []
     attributes = []
     labels = []
-
-    if btrain:
-        class_list = training_class_list
-        # segmented image_mask
-        outfile = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'image_mask_bg_attr_text' + '_train.pickle')
-    else:
-        class_list = test_class_list
-        outfile = os.path.join(data_dir, 'birds' + str(IMSIZE) + 'image_mask_bg_attr_text' + '_test.pickle')
-    filename_mask_dic = load_mask(data_dir)
-
     for i, c in enumerate(class_list):
         for j, f in enumerate(image_lists[c]):
             # print(f)
-            # ####images [-1, 1] values#########################################
-            f_name = os.path.join(data_dir, 'images_cropped', f)
-            # f_name = os.path.join(data_dir, 'segmented_images_cropped', f)
-            # print(f_name)
-            # ###[-1, 1]
-            img = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
-            # ######Convert image to [0, 255]
-            # img += 1.
-            # img *= (255. / 2.)
-            # img = image.astype('uint8')
-            images.append(colorize(img))
-            # print(images[-1].shape)
-            assert images[-1].shape == (IMSIZE, IMSIZE, 3)
+            if bimg:
+                if bbox:
+                    f_name = os.path.join(data_dir, 'images_cropped', f)
+                else:
+                    f_name = os.path.join(data_dir, 'images', f)
+                # ####images [-1, 1] values####################################
+                img = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
+                images.append(colorize(img))
+                # print(images[-1].shape)
+                assert images[-1].shape == (IMSIZE, IMSIZE, 3)
+
+            # ####background images [-1, 1] values#########################
+            if bbgimg:
+                f_name = os.path.join(data_dir, 'images', f)
+                # A 4D array [bg_num, h, w, c]
+                bg_images.append(crop_background_images(f_name, IMSIZE, j))
+
             # ####mask only has 0/1 values#####################################
-            mask = filename_mask_dic[f]
-            mask = scipy.misc.imresize(mask, [IMSIZE, IMSIZE])
-            # print(f, mask, np.sum(mask))
-            # print(type(mask), mask.shape)
-            # return
-            masks.append(mask)
-            # ####background images [-1, 1] values##############################
-            f_name = os.path.join(data_dir, 'images', f)
-            # A 4D array [bg_num, h, w, c]
-            bg_images.append(crop_background_images(f_name, IMSIZE, j))
-            # ####attributes embeddings #######################################
-            attr_embeddings.append(captions[f])
-            # print(attr_embeddings[-1])
-            attributes.append(attributes_strings[f])
-            # print(attr[-1])
+            if filename_mask_dic is not None:
+                mask = filename_mask_dic[f]
+                masks.append(scipy.misc.imresize(mask, [IMSIZE, IMSIZE]))
+
             # ####text embeddings (skip-thought vectors) #######################
-            text_embeddings.append(text_captions[f])
-            # print(text_embeddings[-1].shape)
+            if text_captions is not None:
+                text_embeddings.append(text_captions[f])
+                # print(text_embeddings[-1].shape)
+            if icml16_text_captions is not None:
+                icml16_text_embeddings.append(icml16_text_captions[f])
+
+            # ####attributes embeddings #######################################
+            if attr_captions is not None:
+                attr_embeddings.append(attr_captions[f])
+                # print(attr_embeddings[-1])
+                attributes.append(attr_strings[f])
+                # print(attr[-1])
+
             # ####class labels##################################################
-            labels.append(i)  # temporary
-            print('%d\t%d' % (j, labels[-1]))
+            if blabel:
+                labels.append(i)  # temporary
+            print('%d\t%d' % (j, i))
 
-        # return
+    if len(images):
+        print('images', len(images), images[0].shape)
+        if bbox:
+            outfile = outpath + str(IMSIZE) + 'cropped_images.pickle'
+        else:
+            outfile = outpath + str(IMSIZE) + 'images.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump(images, f_out)
+            print('save to: ', outfile)
+    if len(masks):
+        print('masks', len(masks), masks[0].shape)
+        if bbox:
+            outfile = outpath + str(IMSIZE) + 'cropped_masks.pickle'
+        else:
+            outfile = outpath + str(IMSIZE) + 'masks.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump(masks, f_out)
+            print('save to: ', outfile)
+    if len(bg_images):
+        print('bg_images', len(bg_images), bg_images[0].shape)
+        outfile = outpath + str(IMSIZE) + 'bg_images.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump(bg_images, f_out)
+            print('save to: ', outfile)
+    if len(attr_embeddings):
+        print('attr_embeddings', len(attr_embeddings), attr_embeddings[0].shape)
+        print('attributes', len(attributes), attributes[0])
+        outfile = outpath + 'attr_embeddings_names.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump([attr_embeddings, attributes], f_out)
+            print('save to: ', outfile)
+    if len(text_embeddings):
+        print('text_embeddings', len(text_embeddings), text_embeddings[0].shape)
+        outfile = outpath + 'text_embeddings.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump(text_embeddings, f_out)
+            print('save to: ', outfile)
+    if len(icml16_text_embeddings):
+        print('icml16_text_embeddings', len(icml16_text_embeddings),
+              icml16_text_embeddings[0].shape)
+        outfile = outpath + 'icml16_text_embeddings.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump(icml16_text_embeddings, f_out)
+            print('save to: ', outfile)
+    if len(labels):
+        print('labels', len(labels))
+        outfile = outpath + 'labels.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump(labels, f_out)
+            print('save to: ', outfile)
 
-    print('images', len(images), images[0].shape)
-    print('masks', len(masks), masks[0].shape)
-    print('bg_images', len(bg_images), bg_images[0].shape)
-    print('attr_embeddings', len(attr_embeddings), attr_embeddings[0].shape)
-    print('text_embeddings', len(text_embeddings), text_embeddings[0].shape)
-    print('attributes', len(attributes), attributes[0])
-    with open(outfile, 'wb') as f_out:
-        pickle.dump([height, width, depth, images, masks, bg_images,
-                     attr_embeddings, text_embeddings, attributes, labels], f_out)
+
+def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
+    bbox = 0
+
+    bimg = 0
+    bbgimg = 0
+    bmask = 0
+    btext = 0
+    icml16_btext = 1
+    battr = 0
+    blabel = 0
+
+    training_class_list, test_class_list,\
+        image_lists, img_filenames = get_class_image_list(data_dir, train_ratio)
+
+    # text embeddings
+    if btext:
+        text_captions = get_text_embedding(data_dir)
+    else:
+        text_captions = None
+    if icml16_btext:
+        icml16_text_captions = get_icml16_text_embedding(data_dir)
+    else:
+        icml16_text_captions = None
+
+    if battr:
+        attr_captions, attr_strings = get_attribute_vector(data_dir, img_filenames)
+    else:
+        attr_captions, attr_strings = [None, None]
+
+    if bmask:
+        filename_mask_dic = load_mask(data_dir, bbox)
+        print('mask: ', len(filename_mask_dic))
+    else:
+        filename_mask_dic = None
+
+    # ## For Training data
+    save_data(training_class_list, image_lists, data_dir, bbox, bimg, bbgimg,
+              filename_mask_dic, attr_captions, attr_strings,
+              text_captions, icml16_text_captions,
+              blabel, os.path.join(data_dir, 'pickle/train/'))
+    # ## For Test data
+    save_data(test_class_list, image_lists, data_dir, bbox, bimg, bbgimg,
+              filename_mask_dic, attr_captions, attr_strings,
+              text_captions, icml16_text_captions,
+              blabel, os.path.join(data_dir, 'pickle/test/'))
 
 
 if __name__ == '__main__':

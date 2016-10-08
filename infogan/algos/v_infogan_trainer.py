@@ -337,12 +337,12 @@ class ConInfoGANTrainer(object):
         images_train, masks_train, embeddings_train, _, _ = self.dataset.train.next_batch(64)
         images_train = self.preprocess(images_train)
         masks_train = self.preprocess(masks_train)
-        embeddings = self.preprocess(embeddings_train)
+        embeddings_train = self.preprocess(embeddings_train)
 
         images_test, masks_test, embeddings_test, _, _ = self.dataset.test.next_batch(64)
         images_test = self.preprocess(images_test)
         masks_test = self.preprocess(masks_test)
-        embeddings = self.preprocess(embeddings)
+        embeddings_test = self.preprocess(embeddings_test)
 
         images = np.concatenate([images_train, images_test], axis=0)
         masks = np.concatenate([masks_train, masks_test], axis=0)
@@ -401,7 +401,7 @@ class ConInfoGANTrainer(object):
                                      self.masks: masks.astype(np.float32),
                                      self.embeddings: embeddings
                                      }
-                        if i % 6 == 0:
+                        if i % 1 == 0:
                             # ###TODO: Feed in once to save time
                             feed_out = [self.fg_discriminator_trainer,
                                         self.fg_d_sum,
