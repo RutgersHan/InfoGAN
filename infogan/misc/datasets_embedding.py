@@ -156,31 +156,26 @@ class TextDataset(object):
         # print(self.fixedvisual_train.filenames)
         # print(self.fixedvisual_test.filenames)
 
-    def normalize_array(self, x):
-        old_shape = x.shape
-        x_reshaped = np.reshape(x, (-1, old_shape[-1]))
-        x_normalized = preprocessing.normalize(x_reshaped, norm='l2', axis=1)
-        x_normalized = np.reshape(x_normalized, old_shape)
-        return x_normalized
-
     def get_data(self, pickle_path, flip_flag=True):
-        with open(pickle_path, 'rb') as f:
-            # [height, width, depth, images, masks, bg_images,
-            # attr_embeddings, text_embeddings, attributes, labels]
-            # all images have values in [-1, 1]
-            height, width, depth, images, masks, _,\
-                _, embeddings, _, _ = pickle.load(f)
+        # with open(pickle_path + '/64images.pickle', 'rb') as f:
+        with open(pickle_path + '/64cropped_images.pickle', 'rb') as f:
+            images = pickle.load(f)
             array_images = np.array([image for image in images])
+            print('array_images: ', array_images.shape)
+            _, height, width, depth = array_images.shape
+            self.image_dim = height * width * depth
+            self.image_shape = [height, width, depth]
+        # with open(pickle_path + '/64masks.pickle', 'rb') as f:
+        with open(pickle_path + '/64cropped_masks.pickle', 'rb') as f:
+            masks = pickle.load(f)
             array_masks = np.array([mask for mask in masks])
-            # array_bg_images = np.array([img for img in bg_images])
+        with open(pickle_path + '/icml16_text_embeddings.pickle', 'rb') as f:
+            embeddings = pickle.load(f)
             array_embeddings = np.array([  # every 2400D has alreay been L2 Normalized
                 embedding for embedding in embeddings])
             self.embedding_shape = [array_embeddings.shape[-1]]
-            # print(array_embeddings.shape)
-            # array_labels = np.array([label for label in labels])
+            print('array_embeddings: ', array_embeddings.shape)
 
-            self.image_dim = height * width * depth
-            self.image_shape = [height, width, depth]
             return Dataset(array_images, array_masks, array_embeddings, None, None)
 
 

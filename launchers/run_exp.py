@@ -77,8 +77,8 @@ if __name__ == "__main__":
     ckt_logs_dir = "ckt_logs_fg/%s/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
 
     datadir = 'Data/%s' % cfg.DATASET_NAME
-    filename_test = '%s/%s_test.pickle' % (datadir, cfg.FILENAME)
-    filename_train = '%s/%s_train.pickle' % (datadir, cfg.FILENAME)
+    filename_test = '%s/%s/test' % (datadir, cfg.FILENAME)
+    filename_train = '%s/%s/train' % (datadir, cfg.FILENAME)
     if cfg.ENCODER_INPUT == 'attribute':
         dataset = AttributeDataset(datadir)
         dataset.test, dataset.fixedvisual_test = dataset.get_data(filename_test, 10, 'test')

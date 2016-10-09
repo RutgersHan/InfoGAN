@@ -118,8 +118,11 @@ class ConInfoGANTrainer(object):
 
         with pt.defaults_scope(phase=pt.Phase.train):
             # ####prepare input for G #########################################
+            z = self.model.latent_dist.sample_prior(self.batch_size)
+            self.log_vars.append(("hist_z", z))
             # fg_c sampled from encoded text for generating fg_fake_x
             fg_c, fg_kl_loss = self.sample_encoded_context(bencode=True)
+            fg_encoder_loss = fg_kl_loss
             self.log_vars.append(("fg_hist_fake_c", fg_c))
             self.log_vars.append(("fg_e_kl_loss", fg_kl_loss))
             # fg_noise_c randomly samples from Gaussian for generating fg_noise_x
@@ -127,19 +130,39 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("fg_hist_noise_c", fg_noise_c))
 
             # ####get output from G network####################################
-            self.fg_fake_x = self.model.get_fg_generator(fg_c)
-            self.fg_noise_x = self.model.get_fg_generator(fg_noise_c)
+            self.fg_fake_x = self.model.get_fg_generator(tf.concat(1, [fg_c, z]))
+            self.fg_noise_x = self.model.get_fg_generator(tf.concat(1, [fg_noise_c, z]))
+            # self.fg_fake_x = self.model.get_fg_generator(fg_c)
+            # self.fg_noise_x = self.model.get_fg_generator(fg_noise_c)
 
             # ####get discriminator_loss and generator_loss for FG##############
             # ####Different discriminators but the same generator###############
             fg_discriminator_loss, fg_generator_loss = self.compute_loss_from_fg_D()
             if cfg.TRAIN.MASK_FLAG and cfg.TRAIN.COEFF.LIKE > TINY:
                 fg_like_loss = self.compute_like_loss_from_fg_D()
-                fg_encoder_loss = fg_kl_loss + cfg.TRAIN.COEFF.LIKE * fg_like_loss
+                fg_encoder_loss += cfg.TRAIN.COEFF.LIKE * fg_like_loss
                 self.log_vars.append(("fg_e_like_loss_reweight", cfg.TRAIN.COEFF.LIKE * fg_like_loss))
                 # ##Add like loss to ......
                 # fg_generator_loss + cfg.TRAIN.COEFF.LIKE * fg_like_loss
                 # fg_discriminator_loss += cfg.TRAIN.COEFF.LIKE * fg_like_loss  # TODO: whether add this ??
+
+            # ##MI##############################################################
+            if cfg.TRAIN.COEFF.REAL_C > TINY:
+                mi_sum = tf.constant(0.)
+
+                fg_real_c_var_dist_info = self.model.reconstuct_context(self.fg_images)
+                fg_real_c_mi = self.computeMI(self.model.con_latent_dist, fg_c, fg_real_c_var_dist_info, 0)
+                self.log_vars.append(("fg_d_g_real_c_mi", fg_real_c_mi))
+                mi_sum += cfg.TRAIN.COEFF.REAL_C * fg_real_c_mi
+
+                fg_fake_c_var_dist_info = self.model.reconstuct_context(self.fg_fake_x)
+                fg_fake_c_mi = self.computeMI(self.model.con_latent_dist, fg_c, fg_fake_c_var_dist_info, 0)
+                self.log_vars.append(("fg_d_g_fake_c_mi", fg_fake_c_mi))
+                mi_sum += cfg.TRAIN.COEFF.REAL_C * fg_fake_c_mi
+
+                self.log_vars.append(("fg_d_g_c_MI_weighted_sum", -mi_sum))
+                fg_discriminator_loss -= mi_sum
+                fg_generator_loss -= mi_sum
 
             # #######Total loss for build#######################################
             self.log_vars.append(("fg_e_loss", fg_encoder_loss))
@@ -171,7 +194,7 @@ class ConInfoGANTrainer(object):
     # #####Like loss###################################################
     def compute_like_loss_from_fg_D(self):
         # ##like loss based on element-wise distance between real and fake images
-        # like_loss = tf.reduce_mean(tf.square(self.fg_images - self.fg_fg_x)) / 2.
+        # like_loss = tf.reduce_mean(tf.square(self.fg_images - self.fg_fake_x)) / 2.
 
         # ##like loss based on feature distance between real and fake images
         fg_real_shared_layers = self.model.get_fg_discriminator_shared(self.fg_images)
@@ -184,27 +207,29 @@ class ConInfoGANTrainer(object):
     def compute_loss_from_fg_D(self):
         fg_real_shared_layers = self.model.get_fg_discriminator_shared(self.fg_images)
         fg_fake_shared_layers = self.model.get_fg_discriminator_shared(self.fg_fake_x)
-        fg_noise_shared_layers = self.model.get_fg_discriminator_shared(self.fg_noise_x)
+        # fg_noise_shared_layers = self.model.get_fg_discriminator_shared(self.fg_noise_x)
 
         fg_real_d = self.model.get_fg_discriminator(fg_real_shared_layers)
         fg_fake_d = self.model.get_fg_discriminator(fg_fake_shared_layers)
-        fg_noise_d = self.model.get_fg_discriminator(fg_noise_shared_layers)
+        # fg_noise_d = self.model.get_fg_discriminator(fg_noise_shared_layers)
 
         # Only real FG images are real images, all others are fake images
         fg_d_loss_legit = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_real_d, tf.ones_like(fg_real_d)))
         fg_d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_fake_d, tf.zeros_like(fg_fake_d)))
-        fg_d_loss_noise = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_noise_d, tf.zeros_like(fg_noise_d)))
+        # fg_d_loss_noise = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_noise_d, tf.zeros_like(fg_noise_d)))
 
-        fg_discriminator_loss = fg_d_loss_legit + (fg_d_loss_fake + fg_d_loss_noise) / 2.
+        # fg_discriminator_loss = fg_d_loss_legit + (fg_d_loss_fake + fg_d_loss_noise) / 2.
+        fg_discriminator_loss = fg_d_loss_legit + fg_d_loss_fake
         self.log_vars.append(("fg_d_loss_real", fg_d_loss_legit))
         self.log_vars.append(("fg_d_loss_fake", fg_d_loss_fake))
-        self.log_vars.append(("fg_d_loss_noise", fg_d_loss_noise))
+        # self.log_vars.append(("fg_d_loss_noise", fg_d_loss_noise))
 
         fg_g_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_fake_d, tf.ones_like(fg_fake_d)))
-        fg_g_loss_noise = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_noise_d, tf.ones_like(fg_noise_d)))
-        fg_generator_loss = fg_g_loss_fake + fg_g_loss_noise
+        # fg_g_loss_noise = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fg_noise_d, tf.ones_like(fg_noise_d)))
+        # fg_generator_loss = fg_g_loss_fake + fg_g_loss_noise
+        fg_generator_loss = fg_g_loss_fake
         self.log_vars.append(("fg_g_loss_fake", fg_g_loss_fake))
-        self.log_vars.append(("fg_g_loss_noise", fg_g_loss_noise))
+        # self.log_vars.append(("fg_g_loss_noise", fg_g_loss_noise))
         return fg_discriminator_loss, fg_generator_loss
 
     def prepare_trainer(self, fg_encoder_loss, fg_generator_loss, fg_discriminator_loss):
@@ -217,6 +242,8 @@ class ConInfoGANTrainer(object):
                   var.name.startswith('fg_g_')]
         d_vars = [var for var in all_vars if
                   var.name.startswith('fg_d_')]
+        r_vars = [var for var in all_vars if
+                  var.name.startswith('fg_r_')]
 
         generator_optimizer = tf.train.AdamOptimizer(self.generator_learning_rate, beta1=0.5)
         self.fg_generator_trainer = pt.apply_optimizer(generator_optimizer,
@@ -225,7 +252,7 @@ class ConInfoGANTrainer(object):
         discriminator_optimizer = tf.train.AdamOptimizer(self.discriminator_learning_rate, beta1=0.5)
         self.fg_discriminator_trainer = pt.apply_optimizer(discriminator_optimizer,
                                                            losses=[fg_discriminator_loss],
-                                                           var_list=d_vars)
+                                                           var_list=d_vars + r_vars)
 
     def define_summaries(self):
         '''Helper function for init_opt'''
@@ -264,9 +291,11 @@ class ConInfoGANTrainer(object):
         return current_img_summary
 
     def visualization(self):
+        z = self.model.latent_dist.sample_prior(self.batch_size)
         # c sampled from encoded text
         fg_c, _ = self.sample_encoded_context(bencode=True)
-        fg_fake_x = self.model.get_fg_generator(fg_c)
+        # fg_fake_x = self.model.get_fg_generator(fg_c)
+        fg_fake_x = self.model.get_fg_generator(tf.concat(1, [fg_c, z]))
         fg_fake_sum1 = self.visualize_one_superimage(fg_fake_x[:64, :, :, :],
                                                      self.images[:64, :, :, :],
                                                      self.fg_images[:64, :, :, :],
@@ -278,7 +307,8 @@ class ConInfoGANTrainer(object):
 
         # c randomly samples from Gaussian
         fg_noise_c = self.model.con_latent_dist.sample_prior(self.batch_size)
-        fg_noise_x = self.model.get_fg_generator(fg_noise_c)
+        # fg_noise_x = self.model.get_fg_generator(fg_noise_c)
+        fg_noise_x = self.model.get_fg_generator(tf.concat(1, [fg_noise_c, z]))
         fg_noise_sum = self.visualize_one_superimage(fg_noise_x[:64, :, :, :],
                                                      self.images[:64, :, :, :],
                                                      self.fg_images[:64, :, :, :],
@@ -427,7 +457,7 @@ class ConInfoGANTrainer(object):
                             print("Model saved in file: %s" % fn)
 
                     summary_writer.add_summary(self.epoch_sum_images(sess), counter)
-                    self.epoch_save_samples(sess, cfg.TRAIN.NUM_COPY)
+                    # self.epoch_save_samples(sess, cfg.TRAIN.NUM_COPY)
 
                     avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
                     log_line = "; ".join("%s: %s" % (str(k), str(v)) for k, v in zip(log_keys, avg_log_vals))

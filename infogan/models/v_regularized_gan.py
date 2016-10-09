@@ -46,13 +46,15 @@ class ConRegularizedGAN(object):
         self.image_size = image_shape[0]
         self.image_shape = image_shape
         if cfg.GAN.NETWORK_TYPE == "default":
+            with tf.variable_scope("fg_e_net"):
+                self.fg_context_template = self.context_embedding()
             with tf.variable_scope("fg_d_net"):
                 self.fg_shared_template = self.discriminator_shared()
                 self.fg_discriminator_notshared_template = self.discriminator_notshared()
             with tf.variable_scope("fg_g_net"):
                 self.fg_generator_template = self.generator()
-            with tf.variable_scope("fg_e_net"):
-                self.fg_context_template = self.context_embedding()
+            with tf.variable_scope("fg_r_net"):
+                self.context_reconstruct_template = self.context_reconstruction()
         else:
             raise NotImplementedError
 
@@ -63,6 +65,38 @@ class ConRegularizedGAN(object):
                     apply(tf.nn.relu).
                     custom_fully_connected(self.ef_dim * 2))
         return template
+
+    def generate_fg_condition(self, c_var):
+        conditions = self.fg_context_template.construct(input=c_var)
+        mean = conditions[:, :self.ef_dim]
+        log_sigma = conditions[:, self.ef_dim:]
+        condition_list = [mean, log_sigma]
+        return condition_list
+
+    def generator(self):
+        s = self.image_size
+        s2, s4, s8, s16 = int(s / 2), int(s / 4), int(s / 8), int(s / 16)
+        generator_template = \
+            (pt.template("input").
+             custom_fully_connected(s16 * s16 * self.gf_dim * 8).
+             fc_batch_norm().
+             apply(tf.nn.relu).
+             reshape([-1, s16, s16, self.gf_dim * 8]).
+             custom_deconv2d([0, s8, s8, self.gf_dim * 4], k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(tf.nn.relu).
+             custom_deconv2d([0, s4, s4, self.gf_dim * 2], k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(tf.nn.relu).
+             custom_deconv2d([0, s2, s2, self.gf_dim], k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(tf.nn.relu).
+             custom_deconv2d([0] + list(self.image_shape), k_h=4, k_w=4).
+             apply(tf.nn.tanh))
+        return generator_template
+
+    def get_fg_generator(self, z_var):
+        return self.fg_generator_template.construct(input=z_var)
 
     def discriminator_shared(self):
         last_conv_template = \
@@ -91,45 +125,29 @@ class ConRegularizedGAN(object):
 
         return discriminator_template
 
-    def generator(self):
-        s = self.image_size
-        s2, s4, s8, s16 = int(s / 2), int(s / 4), int(s / 8), int(s / 16)
-        generator_template = \
-            (pt.template("input").
-             custom_fully_connected(s16 * s16 * self.gf_dim * 8).
-             fc_batch_norm().
-             apply(tf.nn.relu).
-             reshape([-1, s16, s16, self.gf_dim * 8]).
-             custom_deconv2d([0, s8, s8, self.gf_dim * 4], k_h=4, k_w=4).
-             conv_batch_norm().
-             apply(tf.nn.relu).
-             custom_deconv2d([0, s4, s4, self.gf_dim * 2], k_h=4, k_w=4).
-             conv_batch_norm().
-             apply(tf.nn.relu).
-             custom_deconv2d([0, s2, s2, self.gf_dim], k_h=4, k_w=4).
-             conv_batch_norm().
-             apply(tf.nn.relu).
-             custom_deconv2d([0] + list(self.image_shape), k_h=4, k_w=4).
-             apply(tf.nn.tanh))
-        return generator_template
-
-    def generate_fg_condition(self, c_var):
-        conditions = self.fg_context_template.construct(input=c_var)
-        mean = conditions[:, :self.ef_dim]
-        log_sigma = conditions[:, self.ef_dim:]
-        condition_list = [mean, log_sigma]
-        return condition_list
-
     def get_fg_discriminator_shared(self, x_var):
         return self.fg_shared_template.construct(input=x_var)
 
     def get_fg_discriminator(self, shared_layers):
         return self.fg_discriminator_notshared_template.construct(input=shared_layers)
 
-    def get_fg_generator(self, z_var):
-        return self.fg_generator_template.construct(input=z_var)
+    def context_reconstruction(self):
+        # ####Use shared_template from discriminator as input
+        reconstruct_template = \
+            (pt.template("input").
+             conv_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(self.ef_dim * 4).
+             fc_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(self.con_latent_dist.dist_flat_dim))
+        return reconstruct_template
 
-
+    def reconstuct_context(self, x_var):
+        shared_layers = self.fg_shared_template.construct(input=x_var)
+        dist_flat = self.context_reconstruct_template.construct(input=shared_layers)
+        dist_info = self.con_latent_dist.activate_dist(dist_flat)
+        return dist_info
 
 
 
