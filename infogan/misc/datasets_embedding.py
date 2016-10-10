@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from __future__ import unicode_literals
+# from __future__ import unicode_literals
 
 import numpy as np
 import pickle
@@ -10,10 +10,14 @@ from sklearn import preprocessing
 
 
 class Dataset(object):
-    def __init__(self, images, masks=None, embeddings=None, bg_images=None, labels=None, flip_flag=True):
+    def __init__(self, images, masks=None, embeddings=None,
+                 filenames=None, workdir=None,
+                 bg_images=None, labels=None, flip_flag=True):
         self._images = images
         self._masks = masks
         self._embeddings = embeddings
+        self._filenames = filenames
+        self.workdir = workdir
         self._bg_images = bg_images
         self._labels = labels
         self._epochs_completed = -1
@@ -33,6 +37,10 @@ class Dataset(object):
     @property
     def embeddings(self):
         return self._embeddings
+
+    @property
+    def filenames(self):
+        return self._filenames
 
     @property
     def bg_images(self):
@@ -58,7 +66,7 @@ class Dataset(object):
                     transformed_images[i] = images[i]
         return transformed_images
 
-    def sample_embeddings(self, embeddings):
+    def sample_embeddings_backup(self, embeddings, filenames, window=2):
         if len(embeddings.shape) == 2 or embeddings.shape[1] == 1:
             return np.squeeze(embeddings)
         else:
@@ -67,10 +75,46 @@ class Dataset(object):
             # return np.squeeze(embeddings[np.arange(batch_size), randix, :])
             # Take every 5 captions to compute the mean vector
             sampled_embeddings = []
-            randix = np.random.randint(2, embedding_num - 2, size=batch_size)
+            sampled_captions = []
+            randix = np.random.randint(window, embedding_num - window, size=batch_size)
             for i in range(batch_size):
-                sampled_embeddings.append(np.mean(embeddings[i, randix[i] - 2:randix[i] + 2, :], axis=0))
-            return np.array(sampled_embeddings)
+                with open(self.workdir + '/text_c10/' + filenames[i] + '.txt', "r") as f:
+                    captions = f.read().split('\n')
+                captions = [cap for cap in captions if len(cap) > 0]
+                # print(captions)
+                sampled_captions.append(captions[randix[i]])
+                if window > 10:
+                    sampled_embeddings.append(embeddings[i, randix[i], :])
+                else:
+                    # sampled_embeddings.append(np.mean(embeddings[i, (randix[i] - window):(randix[i] + window), :], axis=0))
+                    e_sample = embeddings[i, (randix[i] - window):(randix[i] + window), :]
+                    e_mean = np.mean(e_sample, axis=0)
+                    sampled_embeddings.append(e_mean)
+            return np.array(sampled_embeddings), sampled_captions
+
+    def sample_embeddings(self, embeddings, filenames, sample_num):
+        if len(embeddings.shape) == 2 or embeddings.shape[1] == 1:
+            return np.squeeze(embeddings)
+        else:
+            batch_size, embedding_num, _ = embeddings.shape
+            # Take every sample_num captions to compute the mean vector
+            sampled_embeddings = []
+            sampled_captions = []
+            for i in range(batch_size):
+                randix = np.random.choice(embedding_num, sample_num, replace=False)
+                if sample_num == 1:
+                    with open(self.workdir + '/text_c10/' + filenames[i] + '.txt', "r") as f:
+                        captions = f.read().split('\n')
+                    captions = [cap for cap in captions if len(cap) > 0]
+                    # print(captions)
+                    sampled_captions.append(captions[randix])
+                    sampled_embeddings.append(embeddings[i, randix, :])
+                else:
+                    e_sample = embeddings[i, randix, :]
+                    e_mean = np.mean(e_sample, axis=0)
+                    sampled_embeddings.append(e_mean)
+            sampled_embeddings_array = np.array(sampled_embeddings)
+            return np.squeeze(sampled_embeddings_array), sampled_captions
 
     def sample_bg_images(self, bg_images):
         # print(bg_images.shape)
@@ -81,7 +125,7 @@ class Dataset(object):
             randix = np.random.randint(bg_num, size=batch_size)
             return np.squeeze(bg_images[np.arange(batch_size), randix, :])
 
-    def next_batch(self, batch_size):
+    def next_batch(self, batch_size, window):
         """Return the next `batch_size` examples from this data set."""
         start = self._index_in_epoch
         self._index_in_epoch += batch_size
@@ -108,16 +152,23 @@ class Dataset(object):
         # if the input image has values in [0, 255], use this self.transform()
         # sampled_images = self.transform(self._images[start:end])
         sampled_images = self._images[start:end]
-        ret_list = [sampled_images]
+        randix = np.random.randint(self._num_examples, size=batch_size)
+        sampled_wrong_images = self._images[randix, :, :, :]
+        ret_list = [sampled_images, sampled_wrong_images]
+
         if self._masks is not None:
             sampled_masks = self._masks[start:end]
             ret_list.append(sampled_masks)
         else:
             ret_list.append(None)
         if self._embeddings is not None:
-            sampled_embeddings = self.sample_embeddings(self._embeddings[start:end])
+            sampled_embeddings, sampled_captions = \
+                self.sample_embeddings(self._embeddings[start:end],
+                                       self._filenames[start:end], window)
             ret_list.append(sampled_embeddings)
+            ret_list.append(sampled_captions)
         else:
+            ret_list.append(None)
             ret_list.append(None)
         if self._bg_images is not None:
             sampled_bg_images = self.sample_bg_images(self._bg_images[start:end])
@@ -131,19 +182,6 @@ class Dataset(object):
         return ret_list
 
 
-class VisualizeData(object):
-    def __init__(self, workdir, dataset):
-        with open('%s/sample_captions/caption_embedding_image_name_%s.pickle'
-                  % (workdir, dataset), 'rb') as f:
-            self.captions, self.embeddings, self.images, self.filenames = pickle.load(f)
-        self.caption_num = len(self.captions)
-        # Change images value from [0, 255] to [-1., 1.]
-        self.images = self.images.astype(np.float32) / 127.5 - 1.
-        for i in range(self.caption_num):
-            s = self.filenames[i]
-            self.filenames[i] = s[s.find('/') + 1:]
-
-
 class TextDataset(object):
     def __init__(self, workdir):
         self.image_shape = [64, 64, 3]
@@ -151,10 +189,7 @@ class TextDataset(object):
         self.embedding_shape = [4800]
         self.train = None
         self.test = None
-        self.fixedvisual_train = VisualizeData(workdir, 'train')
-        self.fixedvisual_test = VisualizeData(workdir, 'test')
-        # print(self.fixedvisual_train.filenames)
-        # print(self.fixedvisual_test.filenames)
+        self.workdir = workdir
 
     def get_data(self, pickle_path, flip_flag=True):
         # with open(pickle_path + '/64images.pickle', 'rb') as f:
@@ -175,8 +210,11 @@ class TextDataset(object):
                 embedding for embedding in embeddings])
             self.embedding_shape = [array_embeddings.shape[-1]]
             print('array_embeddings: ', array_embeddings.shape)
+        with open(pickle_path + '/filenames.pickle', 'rb') as f:
+            list_filenames = pickle.load(f)
+            print('list_filenames: ', len(list_filenames), list_filenames[0])
 
-            return Dataset(array_images, array_masks, array_embeddings, None, None)
+        return Dataset(array_images, array_masks, array_embeddings, list_filenames, self.workdir, None, None)
 
 
 class VisualizeAttrData(object):

@@ -11,7 +11,7 @@ from infogan.misc.config import cfg
 
 class ConRegularizedGAN(object):
     def __init__(self, output_dist, latent_spec, con_latent_spec,
-                 image_shape, gf_dim=64, df_dim=64):
+                 image_shape):
         """
         :type output_dist: Distribution e.g. MeanBernoulli(dataset.image_dim),
         :type latent_spec: list[(Distribution, bool)]
@@ -35,119 +35,144 @@ class ConRegularizedGAN(object):
         self.batch_size = cfg.TRAIN.BATCH_SIZE
         self.network_type = cfg.GAN.NETWORK_TYPE
         self.image_shape = image_shape
-        self.gf_dim = gf_dim
-        self.df_dim = df_dim
+        self.gf_dim = cfg.GAN.GF_DIM
+        self.df_dim = cfg.GAN.DF_DIM
         self.ef_dim = cfg.GAN.EMBEDDING_DIM
         assert all(isinstance(x, (Gaussian, Categorical, Bernoulli)) for x in self.reg_latent_dist.dists)
 
         self.reg_cont_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, Gaussian)])
         self.reg_disc_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, (Categorical, Bernoulli))])
 
-        self.image_size = image_shape[0]
         self.image_shape = image_shape
+        self.s = image_shape[0]
+        self.s2, self.s4, self.s8, self.s16 = int(self.s / 2), int(self.s / 4), int(self.s / 8), int(self.s / 16)
         if cfg.GAN.NETWORK_TYPE == "default":
-            with tf.variable_scope("fg_e_net"):
-                self.fg_context_template = self.context_embedding()
-            with tf.variable_scope("fg_d_net"):
-                self.fg_shared_template = self.discriminator_shared()
-                self.fg_discriminator_notshared_template = self.discriminator_notshared()
-            with tf.variable_scope("fg_g_net"):
-                self.fg_generator_template = self.generator()
-            with tf.variable_scope("fg_r_net"):
-                self.context_reconstruct_template = self.context_reconstruction()
+            with tf.variable_scope("g_net"):
+                self.g_context_template = self.context_embedding()
+                self.generator_template = self.generator()
+
+            with tf.variable_scope("d_net"):
+                self.d_start_template = self.start_discriminator()
+                self.d_context_template = self.context_embedding()
+                self.d_end_template = self.end_discriminator()
         else:
             raise NotImplementedError
 
     def context_embedding(self):
         template = (pt.template("input").
-                    custom_fully_connected(self.ef_dim * 4).
-                    fc_batch_norm().
-                    apply(tf.nn.relu).
-                    custom_fully_connected(self.ef_dim * 2))
+                    custom_fully_connected(self.ef_dim).
+                    apply(leaky_rectify, leakiness=0.2))
         return template
 
-    def generate_fg_condition(self, c_var):
-        conditions = self.fg_context_template.construct(input=c_var)
-        mean = conditions[:, :self.ef_dim]
-        log_sigma = conditions[:, self.ef_dim:]
-        condition_list = [mean, log_sigma]
-        return condition_list
+    def generate_condition(self, c_var):
+        conditions = self.g_context_template.construct(input=c_var)
+        return conditions
 
     def generator(self):
-        s = self.image_size
-        s2, s4, s8, s16 = int(s / 2), int(s / 4), int(s / 8), int(s / 16)
-        generator_template = \
+        node1_0 = \
             (pt.template("input").
-             custom_fully_connected(s16 * s16 * self.gf_dim * 8).
+             custom_fully_connected(self.s16 * self.s16 * self.gf_dim * 8).
              fc_batch_norm().
-             apply(tf.nn.relu).
-             reshape([-1, s16, s16, self.gf_dim * 8]).
-             custom_deconv2d([0, s8, s8, self.gf_dim * 4], k_h=4, k_w=4).
+             reshape([-1, self.s16, self.s16, self.gf_dim * 8]))
+        node1_1 = \
+            (node1_0.
+             custom_conv2d(self.gf_dim * 2, k_h=1, k_w=1, d_h=1, d_w=1).
              conv_batch_norm().
              apply(tf.nn.relu).
-             custom_deconv2d([0, s4, s4, self.gf_dim * 2], k_h=4, k_w=4).
+             custom_conv2d(self.gf_dim * 2, k_h=3, k_w=3, d_h=1, d_w=1).
              conv_batch_norm().
              apply(tf.nn.relu).
-             custom_deconv2d([0, s2, s2, self.gf_dim], k_h=4, k_w=4).
+             custom_conv2d(self.gf_dim * 8, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm())
+        node1 = \
+            (node1_0.
+             apply(tf.add, node1_1).
+             apply(tf.nn.relu))
+
+        node2_0 = \
+            (node1.
+             custom_deconv2d([0, self.s8, self.s8, self.gf_dim * 4], k_h=4, k_w=4).
+             conv_batch_norm())
+        node2_1 = \
+            (node2_0.
+             custom_conv2d(self.gf_dim * 1, k_h=1, k_w=1, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(tf.nn.relu).
+             custom_conv2d(self.gf_dim * 1, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(tf.nn.relu).
+             custom_conv2d(self.gf_dim * 4, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm())
+        node2 = \
+            (node2_0.
+             apply(tf.add, node2_1).
+             apply(tf.nn.relu))
+
+        template = \
+            (node2.
+             custom_deconv2d([0, self.s4, self.s4, self.gf_dim * 2], k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(tf.nn.relu).
+             custom_deconv2d([0, self.s2, self.s2, self.gf_dim], k_h=4, k_w=4).
              conv_batch_norm().
              apply(tf.nn.relu).
              custom_deconv2d([0] + list(self.image_shape), k_h=4, k_w=4).
              apply(tf.nn.tanh))
-        return generator_template
+        return template
 
-    def get_fg_generator(self, z_var):
-        return self.fg_generator_template.construct(input=z_var)
+    def get_generator(self, z_var):
+        return self.generator_template.construct(input=z_var)
 
-    def discriminator_shared(self):
-        last_conv_template = \
+    def start_discriminator(self):
+        node1_0 = \
             (pt.template("input").
              custom_conv2d(self.df_dim, k_h=4, k_w=4).
-             conv_batch_norm().
-             apply(leaky_rectify).
+             apply(leaky_rectify, leakiness=0.2).
              custom_conv2d(self.df_dim * 2, k_h=4, k_w=4).
              conv_batch_norm().
-             apply(leaky_rectify).
+             apply(leaky_rectify, leakiness=0.2).
              custom_conv2d(self.df_dim * 4, k_h=4, k_w=4).
              conv_batch_norm().
-             apply(leaky_rectify).
-             custom_conv2d(self.df_dim * 8, k_h=4, k_w=4)
-             )
-        shared_template = last_conv_template
-        return shared_template
-
-    def discriminator_notshared(self):
-        # ####Use shared_template from discriminator as input
-        discriminator_template = \
-            (pt.template("input").
+             custom_conv2d(self.df_dim * 8, k_h=4, k_w=4).
+             conv_batch_norm())
+        node1_1 = \
+            (node1_0.
+             custom_conv2d(self.df_dim * 2, k_h=1, k_w=1, d_h=1, d_w=1).
              conv_batch_norm().
-             apply(leaky_rectify).
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 2, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 8, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm())
+
+        node1 = \
+            (node1_0.
+             apply(tf.add, node1_1).
+             apply(leaky_rectify, leakiness=0.2))
+
+        return node1
+
+    def end_discriminator(self):
+        template = \
+            (pt.template("input").  # 128*9*4*4
+             custom_conv2d(self.df_dim * 8, k_h=1, k_w=1, d_h=1, d_w=1).  # 128*8*4*4
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
              custom_fully_connected(1))
+        return template
 
-        return discriminator_template
+    def get_discriminator(self, x_var, c_var):
+        x_code = self.d_start_template.construct(input=x_var)
 
-    def get_fg_discriminator_shared(self, x_var):
-        return self.fg_shared_template.construct(input=x_var)
+        c_code = self.d_context_template.construct(input=c_var)
+        # TODO: dhouble check whether tail is correct
+        c_code = tf.expand_dims(tf.expand_dims(c_code, 1), 1)
+        c_code = tf.tile(c_code, [1, 4, 4, 1])
 
-    def get_fg_discriminator(self, shared_layers):
-        return self.fg_discriminator_notshared_template.construct(input=shared_layers)
+        x_c_code = tf.concat(3, [x_code, c_code])
+        return self.d_end_template.construct(input=x_c_code)
 
-    def context_reconstruction(self):
-        # ####Use shared_template from discriminator as input
-        reconstruct_template = \
-            (pt.template("input").
-             conv_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(self.ef_dim * 4).
-             fc_batch_norm().
-             apply(leaky_rectify).
-             custom_fully_connected(self.con_latent_dist.dist_flat_dim))
-        return reconstruct_template
-
-    def reconstuct_context(self, x_var):
-        shared_layers = self.fg_shared_template.construct(input=x_var)
-        dist_flat = self.context_reconstruct_template.construct(input=shared_layers)
-        dist_info = self.con_latent_dist.activate_dist(dist_flat)
-        return dist_info
 
 
 

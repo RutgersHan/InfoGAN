@@ -17,13 +17,13 @@ __C.ENCODER_INPUT = 'attribute'
 __C.FILENAME = 'birds64image_mask_bg_attr_text'
 __C.CONFIG_NAME = ''
 __C.GPU_ID = 0
+__C.Z_DIM = 100
 
 # Training options
 __C.TRAIN = edict()
 __C.TRAIN.FLAG = True
 __C.TRAIN.BATCH_SIZE = 256
 __C.TRAIN.NUM_COPY = 8
-__C.TRAIN.UPDATES_PER_EPOCH = 50
 __C.TRAIN.MAX_EPOCH = 2000
 __C.TRAIN.SNAPSHOT_INTERVAL = 2000
 __C.TRAIN.PRETRAINED_MODEL = ''
@@ -44,7 +44,9 @@ __C.TRAIN.COEFF.LIKE = 0.0
 
 # Modal options
 __C.GAN = edict()
-__C.GAN.EMBEDDING_DIM = 312
+__C.GAN.EMBEDDING_DIM = 128
+__C.GAN.DF_DIM = 64
+__C.GAN.GF_DIM = 128
 __C.GAN.NETWORK_TYPE = 'default'
 
 __C.GAN.LATENT_SPEC = edict()

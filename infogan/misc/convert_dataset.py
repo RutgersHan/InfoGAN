@@ -318,11 +318,14 @@ def save_data(class_list, image_lists, data_dir, bbox, bimg, bbgimg,
     text_embeddings = []
     icml16_text_embeddings = []
     attr_embeddings = []
+    filenames = []
     attributes = []
     labels = []
     for i, c in enumerate(class_list):
         for j, f in enumerate(image_lists[c]):
             # print(f)
+            filenames.append(f.replace('.jpg', ''))
+
             if bimg:
                 if bbox:
                     f_name = os.path.join(data_dir, 'images_cropped', f)
@@ -414,6 +417,13 @@ def save_data(class_list, image_lists, data_dir, bbox, bimg, bbgimg,
         with open(outfile, 'wb') as f_out:
             pickle.dump(labels, f_out)
             print('save to: ', outfile)
+    if len(filenames):
+        print('filenames', len(filenames), filenames[0])
+        outfile = outpath + 'filenames.pickle'
+        with open(outfile, 'wb') as f_out:
+            pickle.dump(filenames, f_out)
+            print('save to: ', outfile)
+
 
 
 def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
@@ -423,7 +433,7 @@ def convert_birds_dataset_attribute_pickle(data_dir, train_ratio=0.75):
     bbgimg = 0
     bmask = 0
     btext = 0
-    icml16_btext = 1
+    icml16_btext = 0
     battr = 0
     blabel = 0
 
