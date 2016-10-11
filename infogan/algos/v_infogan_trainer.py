@@ -77,9 +77,9 @@ class ConInfoGANTrainer(object):
             tf.float32, [self.batch_size] + self.dataset.image_shape,
             name='wrong_images'
         )
-        # self.masks = tf.placeholder(
-        #     tf.float32, [self.batch_size] + self.dataset.image_shape[:2],
-        #     name='real_masks')
+        self.masks = tf.placeholder(
+            tf.float32, [self.batch_size] + self.dataset.image_shape[:2],
+            name='real_masks')
         self.embeddings = tf.placeholder(
             tf.float32, [self.batch_size] + self.dataset.embedding_shape,
             name='conditional_embeddings'
@@ -108,7 +108,8 @@ class ConInfoGANTrainer(object):
         # self.images, self.masks, self.embeddings, self.bg_images
         self.build_placeholder()
         # masks is tf.float32 with 0s and 1s
-        # self.fg_images = tf.mul(self.images, tf.expand_dims(self.masks, 3))
+        self.fg_images = tf.mul(self.images, tf.expand_dims(self.masks, 3))
+        self.fg_wrong_images = tf.mul(self.wrong_images, tf.expand_dims(self.masks, 3))
 
         with pt.defaults_scope(phase=pt.Phase.train):
             # ####get output from G network####################################
@@ -128,6 +129,8 @@ class ConInfoGANTrainer(object):
             # ####get discriminator_loss and generator_loss ###################
             discriminator_loss = self.compute_d_loss()
             generator_loss = self.compute_g_loss()
+            like_loss = self.compute_like_loss()
+            generator_loss += like_loss
 
             # #######Total loss for build######################################
             self.log_vars.append(("g_loss", generator_loss))
@@ -143,8 +146,8 @@ class ConInfoGANTrainer(object):
 
     # ####get discriminator_loss and generator_loss for FG#####################
     def compute_d_loss(self):
-        real_d = self.model.get_discriminator(self.images, self.embeddings)
-        wrong_d = self.model.get_discriminator(self.wrong_images, self.embeddings)
+        real_d = self.model.get_discriminator(self.fg_images, self.embeddings)
+        wrong_d = self.model.get_discriminator(self.fg_wrong_images, self.embeddings)
         fake_d = self.model.get_discriminator(self.fake_images, self.embeddings)
 
         real_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d, tf.ones_like(real_d)))
@@ -156,6 +159,35 @@ class ConInfoGANTrainer(object):
         self.log_vars.append(("d_loss_wrong", wrong_d_loss))
         self.log_vars.append(("d_loss_fake", fake_d_loss))
         return discriminator_loss
+
+    def compute_like_loss(self):
+        like_loss = tf.constant(0.)
+
+        fake_L2_ftr = self.model.d_L2_template.construct(input=self.fake_images)
+        real_L2_ftr = self.model.d_L2_template.construct(input=self.fg_images)
+        # like_loss_L2 = tf.reduce_mean(tf.square(fake_L2_ftr - real_L2_ftr)) / 2.
+        # self.log_vars.append(("g_like_loss_L2", like_loss_L2))
+        # like_loss += like_loss_L2
+
+        fake_L3_ftr = self.model.d_L3_template.construct(L2=fake_L2_ftr)
+        real_L3_ftr = self.model.d_L3_template.construct(L2=real_L2_ftr)
+        like_loss_L3 = tf.reduce_mean(tf.square(fake_L3_ftr - real_L3_ftr)) / 2.
+        self.log_vars.append(("g_like_loss_L3", 2 * like_loss_L3))
+        like_loss += 2 * like_loss_L3
+
+        fake_L4_sub1_ftr = self.model.d_L4_sub1_template.construct(L3=fake_L3_ftr)
+        real_L4_sub1_ftr = self.model.d_L4_sub1_template.construct(L3=real_L3_ftr)
+        like_loss_L4_sub1 = tf.reduce_mean(tf.square(fake_L4_sub1_ftr - real_L4_sub1_ftr)) / 2.
+        self.log_vars.append(("g_like_loss_L4_sub1", 0.2 * like_loss_L4_sub1))
+        like_loss += 0.2 * like_loss_L4_sub1
+
+        fake_L4_sub2_ftr = self.model.d_L4_sub1_template.construct(L3=fake_L3_ftr)
+        real_L4_sub2_ftr = self.model.d_L4_sub1_template.construct(L3=real_L3_ftr)
+        like_loss_L4_sub2 = tf.reduce_mean(tf.square(fake_L4_sub2_ftr - real_L4_sub2_ftr)) / 2.
+        self.log_vars.append(("g_like_loss_L4_sub2", 0.2 * like_loss_L4_sub2))
+        like_loss += 0.2 * like_loss_L4_sub2
+
+        return like_loss
 
     def compute_g_loss(self):
         interp_fake_g = self.model.get_discriminator(self.interp_fake_images, self.interp_embeddings)
@@ -217,10 +249,10 @@ class ConInfoGANTrainer(object):
         z = tf.random_normal([self.batch_size, cfg.Z_DIM])
         fake_x = self.model.get_generator(tf.concat(1, [c, z]))
         fake_sum_train, superimage_train = self.visualize_one_superimage(fake_x[:64, :, :, :],
-                                                                         self.images[:64, :, :, :],
+                                                                         self.fg_images[:64, :, :, :],
                                                                          8, "train_on_text")
         fake_sum_test, superimage_test = self.visualize_one_superimage(fake_x[64:128, :, :, :],
-                                                                       self.images[64:128, :, :, :],
+                                                                       self.fg_images[64:128, :, :, :],
                                                                        8, "test_on_text")
         self.superimages = tf.concat(0, [superimage_train, superimage_test])
         self.image_summary = tf.merge_summary([fake_sum_train, fake_sum_test])
@@ -233,26 +265,27 @@ class ConInfoGANTrainer(object):
         return x
 
     def epoch_sum_images(self, sess):
-        images_train, _, _, embeddings_train, captions_train, _, _ = self.dataset.train.next_batch(64, 1)
+        images_train, _, masks_train, embeddings_train, captions_train, _, _ = self.dataset.train.next_batch(64, 1)
         images_train = self.preprocess(images_train)
-        # masks_train = self.preprocess(masks_train)
+        masks_train = self.preprocess(masks_train)
         embeddings_train = self.preprocess(embeddings_train)
 
-        images_test, _, _, embeddings_test, captions_test, _, _ = self.dataset.test.next_batch(64, 1)
+        images_test, _, masks_test, embeddings_test, captions_test, _, _ = self.dataset.test.next_batch(64, 1)
         images_test = self.preprocess(images_test)
-        # masks_test = self.preprocess(masks_test)
+        masks_test = self.preprocess(masks_test)
         embeddings_test = self.preprocess(embeddings_test)
 
         images = np.concatenate([images_train, images_test], axis=0)
-        # masks = np.concatenate([masks_train, masks_test], axis=0)
+        masks = np.concatenate([masks_train, masks_test], axis=0)
         embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
 
         if self.batch_size > 128:
-            images_pad, _, _, embeddings_pad, _, _, _ = self.dataset.test.next_batch(self.batch_size - 128, 1)
+            images_pad, _, masks_pad, embeddings_pad, _, _, _ = self.dataset.test.next_batch(self.batch_size - 128, 1)
             images = np.concatenate([images, images_pad], axis=0)
-            # masks = np.concatenate([masks, masks_pad], axis=0)
+            masks = np.concatenate([masks, masks_pad], axis=0)
             embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
         feed_dict = {self.images: images,
+                     self.masks: masks,
                      self.embeddings: embeddings
                      }
         gen_samples, img_summary = sess.run([self.superimages, self.image_summary], feed_dict)
@@ -313,17 +346,18 @@ class ConInfoGANTrainer(object):
                     pbar = ProgressBar(maxval=updates_per_epoch, widgets=widgets)
                     pbar.start()
 
-                    if epoch % 30 == 0 and epoch != 0:
-                        generator_learning_rate *= 0.5
-                        discriminator_learning_rate *= 0.5
+                    if epoch % 30 == 0 and epoch != 0 and generator_learning_rate > 0.000001:
+                        generator_learning_rate *= 0.2
+                        discriminator_learning_rate *= 0.2
 
                     all_log_vals = []
                     for i in range(updates_per_epoch):
                         pbar.update(i)
-                        # training d
-                        images, wrong_images, _, embeddings, _, _, _ = self.dataset.train.next_batch(self.batch_size, 4)
+                        # Prepare a batch of data
+                        images, wrong_images, masks, embeddings, _, _, _ = self.dataset.train.next_batch(self.batch_size, 4)
                         feed_dict = {self.images: images,
-                                     self.wrong_images: wrong_images,  # self.masks: masks.astype(np.float32),
+                                     self.masks: masks.astype(np.float32),
+                                     self.wrong_images: wrong_images,
                                      self.embeddings: embeddings,
                                      self.generator_learning_rate: generator_learning_rate,
                                      self.discriminator_learning_rate: discriminator_learning_rate

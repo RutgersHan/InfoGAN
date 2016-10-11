@@ -52,7 +52,11 @@ class ConRegularizedGAN(object):
                 self.generator_template = self.generator()
 
             with tf.variable_scope("d_net"):
-                self.d_start_template = self.start_discriminator()
+                self.d_L2_template = self.L2_discriminator()
+                self.d_L3_template = self.L3_from_L2_discriminator()
+                self.d_L4_template, self.d_L4_sub1_template,\
+                    self.d_L4_sub2_template = self.L4_from_L3_discriminator()
+                # self.d_start_template = self.start_discriminator()
                 self.d_context_template = self.context_embedding()
                 self.d_end_template = self.end_discriminator()
         else:
@@ -123,6 +127,46 @@ class ConRegularizedGAN(object):
     def get_generator(self, z_var):
         return self.generator_template.construct(input=z_var)
 
+    def L2_discriminator(self):
+        L2 = \
+            (pt.template("input").
+             custom_conv2d(self.df_dim, k_h=4, k_w=4).
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 2, k_h=4, k_w=4))
+        return L2
+
+    def L3_from_L2_discriminator(self):
+        L3 = \
+            (pt.template("L2").
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 4, k_h=4, k_w=4)
+             )
+        return L3
+
+    def L4_from_L3_discriminator(self):
+        node1_0 = \
+            (pt.template("L3").
+             conv_batch_norm().
+             custom_conv2d(self.df_dim * 8, k_h=4, k_w=4))
+        node1_1 = \
+            (node1_0.
+             conv_batch_norm().
+             custom_conv2d(self.df_dim * 2, k_h=1, k_w=1, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 2, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 8, k_h=3, k_w=3, d_h=1, d_w=1))
+        node1 = \
+            (node1_0.
+             conv_batch_norm().
+             apply(tf.add, node1_1.conv_batch_norm()).
+             apply(leaky_rectify, leakiness=0.2))
+
+        return node1, node1_0, node1_1
+
     def start_discriminator(self):
         node1_0 = \
             (pt.template("input").
@@ -163,7 +207,10 @@ class ConRegularizedGAN(object):
         return template
 
     def get_discriminator(self, x_var, c_var):
-        x_code = self.d_start_template.construct(input=x_var)
+        x_L2 = self.d_L2_template.construct(input=x_var)
+        x_L3 = self.d_L3_template.construct(L2=x_L2)
+        x_code = self.d_L4_template.construct(L3=x_L3)
+        # x_code = self.d_start_template.construct(input=x_var)
 
         c_code = self.d_context_template.construct(input=c_var)
         # TODO: dhouble check whether tail is correct
