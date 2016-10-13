@@ -18,6 +18,7 @@ __C.FILENAME = 'birds64image_mask_bg_attr_text'
 __C.CONFIG_NAME = ''
 __C.GPU_ID = 0
 __C.Z_DIM = 100
+__C.NOISE_TYPE = 'uniform'
 
 # Training options
 __C.TRAIN = edict()

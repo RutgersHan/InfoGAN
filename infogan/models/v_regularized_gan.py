@@ -58,7 +58,7 @@ class ConRegularizedGAN(object):
                 self.d_L4_template, self.d_L4_sub1_template,\
                     self.d_L4_sub2_template = self.L4_from_L3_discriminator()
                 # self.d_start_template = self.start_discriminator()
-                self.d_context_template = self.context_embedding()
+                self.d_context_template = self.context_embedding_d()
                 self.d_end_template = self.end_discriminator()
                 self.context_reconstruct_template = self.context_reconstruction()
 
@@ -71,6 +71,14 @@ class ConRegularizedGAN(object):
                     custom_fully_connected(self.ef_dim).
                     apply(leaky_rectify, leakiness=0.2))
         return template
+
+    def context_embedding_d(self):
+        template = (pt.template("input").
+                    custom_fully_connected(self.ef_dim).
+                    fc_batch_norm().
+                    apply(leaky_rectify, leakiness=0.2))
+        return template
+
 
     def generate_condition(self, c_var):
         conditions = self.g_context_template.construct(input=c_var)
@@ -165,6 +173,7 @@ class ConRegularizedGAN(object):
         node1_0 = \
             (pt.template("L3").
              conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
              custom_conv2d(self.df_dim * 8, k_h=4, k_w=4))
         node1_1 = \
             (node1_0.
@@ -255,11 +264,14 @@ class ConRegularizedGAN(object):
         # x_code = self.d_start_template.construct(input=x_var)
 
         c_code = self.d_context_template.construct(input=c_var)
+
         # TODO: dhouble check whether tail is correct
         c_code = tf.expand_dims(tf.expand_dims(c_code, 1), 1)
+
         c_code = tf.tile(c_code, [1, 4, 4, 1])
 
         x_c_code = tf.concat(3, [x_code, c_code])
+
         return self.d_end_template.construct(input=x_c_code)
 
     def context_reconstruction(self):

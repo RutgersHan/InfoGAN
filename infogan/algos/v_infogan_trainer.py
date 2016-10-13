@@ -172,8 +172,11 @@ class ConInfoGANTrainer(object):
                 c, _ = self.sample_encoded_context(self.embeddings)
             elif TYPE_KL_LOSS == 2:
                 c, _, _, _ = self.sample_encoded_context(self.embeddings)
+            if cfg.NOISE_TYPE == 'normal':
+                z = tf.random_normal([self.batch_size, cfg.Z_DIM])
+            else:
+                z = tf.random_uniform([self.batch_size, cfg.Z_DIM], minval=-1, maxval=1)
 
-            z = tf.random_normal([self.batch_size, cfg.Z_DIM])
             self.log_vars.append(("hist_c", c))
             self.log_vars.append(("hist_z", z))
             fake_images = self.model.get_generator(tf.concat(1, [c, z]))
@@ -192,15 +195,21 @@ class ConInfoGANTrainer(object):
                 interp_c, interp_kl_loss, mean, log_sigma = self.sample_encoded_context(interp_embeddings)
                 self.log_vars.append(("g_c_mean1", mean))
                 self.log_vars.append(("g_c_log_sigma", log_sigma))
-
-            interp_z = tf.random_normal([int(self.batch_size * 3 / 2), cfg.Z_DIM])
+            if cfg.NOISE_TYPE == 'normal':
+                interp_z = tf.random_normal([int(self.batch_size * 3 / 2), cfg.Z_DIM])
+            else:
+                interp_z = tf.random_uniform([int(self.batch_size * 3 / 2), cfg.Z_DIM], minval=-1, maxval=1)
             self.log_vars.append(("hist_interp_c", interp_c))
             self.log_vars.append(("hist_interp_z", interp_z))
             interp_fake_images = self.model.get_generator(tf.concat(1, [interp_c, interp_z]))
 
             ####################################################################
-            noise_c = tf.random_normal([self.batch_size, cfg.GAN.EMBEDDING_DIM])
-            noise_z = tf.random_normal([self.batch_size, cfg.Z_DIM])
+            if cfg.NOISE_TYPE == 'normal':
+                noise_c = tf.random_normal([self.batch_size, cfg.GAN.EMBEDDING_DIM])
+                noise_z = tf.random_normal([self.batch_size, cfg.Z_DIM])
+            else:
+                noise_c = tf.random_uniform([self.batch_size, cfg.GAN.EMBEDDING_DIM], minval=-1, maxval=1)
+                noise_z = tf.random_uniform([self.batch_size, cfg.Z_DIM], minval=-1, maxval=1)
             self.log_vars.append(("hist_noise_c", noise_c))
             self.log_vars.append(("hist_noise_z", noise_z))
             noise_images = self.model.get_generator(tf.concat(1, [noise_c, noise_z]))
@@ -223,7 +232,7 @@ class ConInfoGANTrainer(object):
 
             # ####get generator_loss ##########################################
             generator_loss_pre, generator_loss_cond =\
-                self.compute_g_loss(fake_images, noise_images, c)
+                self.compute_g_loss(interp_fake_images, noise_images, interp_c)
             # if TYPE_KL_LOSS > 0:
             #    generator_loss += interp_kl_loss
             #    self.log_vars.append(("g_interp_kl_loss", interp_kl_loss))
@@ -234,9 +243,9 @@ class ConInfoGANTrainer(object):
             if B_PRETRAIN:
                 self.log_vars.append(("g_loss_total", generator_loss_pre))
             else:
-                like_loss = self.compute_color_like_loss(real_images,
-                                                         fake_images, self.masks, 50)
-                generator_loss_cond += like_loss
+                # like_loss = self.compute_color_like_loss(real_images,
+                #                                         fake_images, self.masks, 50)
+                # generator_loss_cond += like_loss
                 self.log_vars.append(("g_loss_total", generator_loss_cond))
 
             self.prepare_trainer(generator_loss_pre, discriminator_loss_pre,
@@ -251,16 +260,16 @@ class ConInfoGANTrainer(object):
 
     # ####get discriminator_loss and generator_loss for FG#####################
     def compute_d_loss(self, real_images, wrong_images, fake_images, noise_images, c):
-        # real_d = self.model.get_discriminator(real_images, self.embeddings)
-        real_d = self.model.get_noise_discriminator(real_images)
+        real_d = self.model.get_discriminator(real_images, self.embeddings)
+        # real_d = self.model.get_noise_discriminator(real_images)
         real_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d, tf.ones_like(real_d)))
         #
-        # wrong_d = self.model.get_discriminator(wrong_images, self.embeddings)
-        wrong_d = self.model.get_noise_discriminator(wrong_images)
+        wrong_d = self.model.get_discriminator(wrong_images, self.embeddings)
+        # wrong_d = self.model.get_noise_discriminator(wrong_images)
         wrong_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(wrong_d, tf.zeros_like(wrong_d)))
         #
-        # fake_d = self.model.get_discriminator(fake_images, self.embeddings)  # c
-        fake_d = self.model.get_noise_discriminator(fake_images)
+        fake_d = self.model.get_discriminator(fake_images, self.embeddings)  # c
+        # fake_d = self.model.get_noise_discriminator(fake_images)
         fake_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_d, tf.zeros_like(fake_d)))
         if B_PRETRAIN == 0:
             self.log_vars.append(("d_loss_real", real_d_loss))
@@ -381,8 +390,8 @@ class ConInfoGANTrainer(object):
         return mutual_info
 
     def compute_g_loss(self, fake_images, noise_images, c):
-        # fake_g = self.model.get_discriminator(fake_images, self.embeddings)  # self.interp_embeddings
-        fake_g = self.model.get_noise_discriminator(fake_images)
+        fake_g = self.model.get_discriminator(fake_images, self.interp_embeddings)  # self.interp_embeddings
+        # fake_g = self.model.get_noise_discriminator(fake_images)
         fake_g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_g, tf.ones_like(fake_g)))
         if B_PRETRAIN == 0:
             self.log_vars.append(("g_loss_fake", fake_g_loss))
@@ -459,8 +468,10 @@ class ConInfoGANTrainer(object):
             c, _ = self.sample_encoded_context(self.embeddings)
         elif TYPE_KL_LOSS == 2:
             c, _, _, _ = self.sample_encoded_context(self.embeddings)
-
-        z = tf.random_normal([self.batch_size, cfg.Z_DIM])
+        if cfg.NOISE_TYPE == 'normal':
+            z = tf.random_normal([self.batch_size, cfg.Z_DIM])
+        else:
+            z = tf.random_uniform([self.batch_size, cfg.Z_DIM], minval=-1, maxval=1)
         fake_x = self.model.get_generator(tf.concat(1, [c, z]))
         fake_sum_train, superimage_train = self.visualize_one_superimage(fake_x[:64, :, :, :],
                                                                          real_images[:64, :, :, :],
@@ -468,8 +479,10 @@ class ConInfoGANTrainer(object):
         fake_sum_test, superimage_test = self.visualize_one_superimage(fake_x[64:128, :, :, :],
                                                                        real_images[64:128, :, :, :],
                                                                        8, "test_on_text")
-
-        noise_c = tf.random_normal([self.batch_size, cfg.GAN.EMBEDDING_DIM])
+        if cfg.NOISE_TYPE == 'normal':
+            noise_c = tf.random_normal([self.batch_size, cfg.GAN.EMBEDDING_DIM])
+        else:
+            noise_c = tf.random_uniform([self.batch_size, cfg.GAN.EMBEDDING_DIM], minval=-1, maxval=1)
         noise_x = self.model.get_generator(tf.concat(1, [noise_c, z]))
         noise_sum_train, _ = self.visualize_one_superimage(noise_x[:64, :, :, :],
                                                            real_images[:64, :, :, :],
@@ -566,12 +579,12 @@ class ConInfoGANTrainer(object):
                     pbar = ProgressBar(maxval=updates_per_epoch, widgets=widgets)
                     pbar.start()
 
-                    # if epoch % 30 == 0 and epoch != 0 and generator_learning_rate > 0.000001:
-                        # generator_learning_rate *= 0.5  # TODO:0.5; 0.2
-                        # discriminator_learning_rate *= 0.5
-                    if generator_learning_rate > 0.000001:
-                        generator_learning_rate = generator_learning_rate * 0.97
-                        discriminator_learning_rate = discriminator_learning_rate * 0.95
+                    if epoch % 30 == 0 and epoch != 0 and generator_learning_rate > 0.000001:
+                        generator_learning_rate *= 0.5  # TODO:0.5; 0.2
+                        discriminator_learning_rate *= 0.5
+                    #if generator_learning_rate > 0.000001:
+                    #    generator_learning_rate = generator_learning_rate * 0.97
+                    #    discriminator_learning_rate = discriminator_learning_rate * 0.95
 
                     all_log_vals = []
                     if B_PRETRAIN:
