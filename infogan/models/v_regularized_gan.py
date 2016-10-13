@@ -58,7 +58,7 @@ class ConRegularizedGAN(object):
                 self.d_L4_template, self.d_L4_sub1_template,\
                     self.d_L4_sub2_template = self.L4_from_L3_discriminator()
                 # self.d_start_template = self.start_discriminator()
-                # self.d_context_template = self.context_embedding()
+                self.d_context_template = self.context_embedding()
                 self.d_end_template = self.end_discriminator()
                 self.context_reconstruct_template = self.context_reconstruction()
 
@@ -68,7 +68,8 @@ class ConRegularizedGAN(object):
 
     def context_embedding(self):
         template = (pt.template("input").
-                    custom_fully_connected(self.ef_dim))  # .apply(leaky_rectify, leakiness=0.2))
+                    custom_fully_connected(self.ef_dim).
+                    apply(leaky_rectify, leakiness=0.2))
         return template
 
     def generate_condition(self, c_var):
@@ -222,7 +223,7 @@ class ConRegularizedGAN(object):
              custom_fully_connected(1))
         return template
 
-    def get_discriminator(self, x_var, c_code):
+    def get_discriminator_old(self, x_var, c_code):
         x_L2 = self.d_L2_template.construct(input=x_var)
         x_L3 = self.d_L3_template.construct(L2=x_L2)
         x_code = self.d_L4_template.construct(L3=x_L3)
@@ -247,9 +248,7 @@ class ConRegularizedGAN(object):
 
         return self.d_end_noise_template.construct(input=x_code)
 
-
-
-    def get_discriminator_old(self, x_var, c_var):
+    def get_discriminator(self, x_var, c_var):
         x_L2 = self.d_L2_template.construct(input=x_var)
         x_L3 = self.d_L3_template.construct(L2=x_L2)
         x_code = self.d_L4_template.construct(L3=x_L3)

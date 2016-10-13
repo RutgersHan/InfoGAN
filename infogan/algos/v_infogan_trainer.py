@@ -20,6 +20,8 @@ B_MI_LOSS = 0
 
 B_PRETRAIN = 0
 
+B_MASKED = 1
+
 
 def sampleGaussian(mu, log_sigma):
     """(Differentiably!) draw sample from Gaussian with given shape, subject to random noise epsilon"""
@@ -43,17 +45,18 @@ def cosine_loss(vector1, vector2):
 
 
 def compute_mean_covariance(img):
-    # the shape of x is (batch_size, height, width, depth)
-    shape = tf.shape(img)
-    batch_size = shape[0]
-    height = shape[1]
-    width = shape[2]
-    channel_num = shape[3]
+    shape = img.get_shape()
+    batch_size = shape[0].value
+    height = shape[1].value
+    width = shape[2].value
+    channel_num = shape[3].value
     mu = tf.reduce_mean(img, [1, 2], True)
+
     num_pixels = height * width
     # shape is batch_size * num_pixels * channel_num
     img_hat = img - mu
     img_hat = tf.reshape(img_hat, [batch_size, -1, channel_num])
+
     # shape is batch_size * channel_num * num_pixels
     img_hat_transpose = tf.transpose(img_hat, perm=[0, 2, 1])
     # shape is batch_size * channle_num * channle_num
@@ -152,58 +155,65 @@ class ConInfoGANTrainer(object):
     def init_opt(self):
         # self.images, self.masks, self.embeddings, self.bg_images
         self.build_placeholder()
+        #
         # masks is tf.float32 with 0s and 1s
-        self.fg_images = tf.mul(self.images, tf.expand_dims(self.masks, 3))
-        self.fg_wrong_images = tf.mul(self.wrong_images, tf.expand_dims(self.masks, 3))
+        if B_MASKED:
+            real_images = tf.mul(self.images, tf.expand_dims(self.masks, 3))
+            real_wrong_images = tf.mul(self.wrong_images, tf.expand_dims(self.masks, 3))
+        else:
+            real_images = self.images
+            real_wrong_images = self.wrong_images
 
         with pt.defaults_scope(phase=pt.Phase.train):
             # ####get output from G network####################################
             if TYPE_KL_LOSS == 0:
-                self.c = self.sample_encoded_context(self.embeddings)
+                c = self.sample_encoded_context(self.embeddings)
             elif TYPE_KL_LOSS == 1:
-                self.c, _ = self.sample_encoded_context(self.embeddings)
+                c, _ = self.sample_encoded_context(self.embeddings)
             elif TYPE_KL_LOSS == 2:
-                self.c, _, _, _ = self.sample_encoded_context(self.embeddings)
+                c, _, _, _ = self.sample_encoded_context(self.embeddings)
 
             z = tf.random_normal([self.batch_size, cfg.Z_DIM])
-            self.log_vars.append(("hist_c", self.c))
+            self.log_vars.append(("hist_c", c))
             self.log_vars.append(("hist_z", z))
-            self.fake_images = self.model.get_generator(tf.concat(1, [self.c, z]))
+            fake_images = self.model.get_generator(tf.concat(1, [c, z]))
 
             ####################################################################
-            self.interp_embeddings = self.get_interp_embeddings(self.embeddings)
+            interp_embeddings = self.get_interp_embeddings(self.embeddings)
             if TYPE_KL_LOSS == 0:
-                self.interp_c = self.sample_encoded_context(self.interp_embeddings)
+                interp_c = self.sample_encoded_context(interp_embeddings)
                 # self.log_vars.append(("g_c_mean1", mean1))
                 # self.log_vars.append(("g_c_var1", var1))
                 # self.log_vars.append(("g_c_mean2", mean2))
                 # self.log_vars.append(("g_c_var2", var2))
             elif TYPE_KL_LOSS == 1:
-                self.interp_c, interp_kl_loss = self.sample_encoded_context(self.interp_embeddings)
+                interp_c, interp_kl_loss = self.sample_encoded_context(interp_embeddings)
             elif TYPE_KL_LOSS == 2:
-                self.interp_c, interp_kl_loss, mean, log_sigma = self.sample_encoded_context(self.interp_embeddings)
+                interp_c, interp_kl_loss, mean, log_sigma = self.sample_encoded_context(interp_embeddings)
                 self.log_vars.append(("g_c_mean1", mean))
                 self.log_vars.append(("g_c_log_sigma", log_sigma))
 
             interp_z = tf.random_normal([int(self.batch_size * 3 / 2), cfg.Z_DIM])
-            self.log_vars.append(("hist_interp_c", self.interp_c))
+            self.log_vars.append(("hist_interp_c", interp_c))
             self.log_vars.append(("hist_interp_z", interp_z))
-            self.interp_fake_images = self.model.get_generator(tf.concat(1, [self.interp_c, interp_z]))
+            interp_fake_images = self.model.get_generator(tf.concat(1, [interp_c, interp_z]))
 
             ####################################################################
-            self.noise_c = tf.random_normal([self.batch_size, cfg.GAN.EMBEDDING_DIM])
+            noise_c = tf.random_normal([self.batch_size, cfg.GAN.EMBEDDING_DIM])
             noise_z = tf.random_normal([self.batch_size, cfg.Z_DIM])
-            self.log_vars.append(("hist_noise_c", self.noise_c))
+            self.log_vars.append(("hist_noise_c", noise_c))
             self.log_vars.append(("hist_noise_z", noise_z))
-            self.noise_images = self.model.get_generator(tf.concat(1, [self.noise_c, noise_z]))
+            noise_images = self.model.get_generator(tf.concat(1, [noise_c, noise_z]))
 
             # ####get discriminator_loss #######################################
-            discriminator_loss_pre, discriminator_loss_cond = self.compute_d_loss()
+            discriminator_loss_pre, discriminator_loss_cond = \
+                self.compute_d_loss(real_images, real_wrong_images,
+                                    fake_images, noise_images, c)
             if B_MI_LOSS > 0:
-                d_mi = self.computeMI(self.c, self.fake_images, 1)
+                d_mi = self.computeMI(c, fake_images, 1)
                 self.log_vars.append(("d_mi", B_MI_LOSS * d_mi))
 
-                d_mi_real = self.computeMI(self.c, self.fg_images, 1)
+                d_mi_real = self.computeMI(c, real_images, 1)
                 self.log_vars.append(("d_mi_real", B_MI_LOSS * d_mi_real))
                 # discriminator_loss -= B_MI_LOSS * (d_mi + d_mi_real)
             if B_PRETRAIN:
@@ -212,19 +222,20 @@ class ConInfoGANTrainer(object):
                 self.log_vars.append(("d_loss_total", discriminator_loss_cond))
 
             # ####get generator_loss ##########################################
-            generator_loss_pre, generator_loss_cond = self.compute_g_loss()
+            generator_loss_pre, generator_loss_cond =\
+                self.compute_g_loss(fake_images, noise_images, c)
             # if TYPE_KL_LOSS > 0:
             #    generator_loss += interp_kl_loss
             #    self.log_vars.append(("g_interp_kl_loss", interp_kl_loss))
             if B_MI_LOSS:
-                g_mi = self.computeMI(self.interp_c, self.interp_fake_images, 1)
+                g_mi = self.computeMI(interp_c, interp_fake_images, 1)
                 # generator_loss -= B_MI_LOSS * g_mi
                 self.log_vars.append(("g_mi", B_MI_LOSS * g_mi))
             if B_PRETRAIN:
                 self.log_vars.append(("g_loss_total", generator_loss_pre))
             else:
-                # like_loss = self.compute_like_loss()
-                like_loss = self.compute_color_like_loss(100)
+                like_loss = self.compute_color_like_loss(real_images,
+                                                         fake_images, self.masks, 50)
                 generator_loss_cond += like_loss
                 self.log_vars.append(("g_loss_total", generator_loss_cond))
 
@@ -235,18 +246,21 @@ class ConInfoGANTrainer(object):
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
-                self.visualization()
+                self.visualization(real_images)
                 print("success")
 
     # ####get discriminator_loss and generator_loss for FG#####################
-    def compute_d_loss(self):
-        real_d = self.model.get_discriminator(self.fg_images, self.c)
+    def compute_d_loss(self, real_images, wrong_images, fake_images, noise_images, c):
+        # real_d = self.model.get_discriminator(real_images, self.embeddings)
+        real_d = self.model.get_noise_discriminator(real_images)
         real_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d, tf.ones_like(real_d)))
         #
-        wrong_d = self.model.get_discriminator(self.fg_wrong_images, self.c)
+        # wrong_d = self.model.get_discriminator(wrong_images, self.embeddings)
+        wrong_d = self.model.get_noise_discriminator(wrong_images)
         wrong_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(wrong_d, tf.zeros_like(wrong_d)))
         #
-        fake_d = self.model.get_discriminator(self.fake_images, self.c)  # self.embeddings
+        # fake_d = self.model.get_discriminator(fake_images, self.embeddings)  # c
+        fake_d = self.model.get_noise_discriminator(fake_images)
         fake_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_d, tf.zeros_like(fake_d)))
         if B_PRETRAIN == 0:
             self.log_vars.append(("d_loss_real", real_d_loss))
@@ -254,10 +268,10 @@ class ConInfoGANTrainer(object):
             self.log_vars.append(("d_loss_fake", fake_d_loss))
         discriminator_loss_cond = real_d_loss + (wrong_d_loss + fake_d_loss) / 2.
 
-        real_d2 = self.model.get_noise_discriminator(self.fg_images)
+        real_d2 = self.model.get_noise_discriminator(real_images)
         real_d_loss2 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d2, tf.ones_like(real_d2)))
         #
-        noise_d = self.model.get_noise_discriminator(self.noise_images)
+        noise_d = self.model.get_noise_discriminator(noise_images)
         noise_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(noise_d, tf.zeros_like(noise_d)))
         if B_PRETRAIN == 1:
             self.log_vars.append(("d_loss_real2", real_d_loss2))
@@ -266,10 +280,44 @@ class ConInfoGANTrainer(object):
 
         return discriminator_loss_pre, discriminator_loss_cond
 
-    def compute_color_like_loss(self, lamda):
+    def compute_mean_covariance_with_mask(self, img, mask):
+        shape = img.get_shape()
+        batch_size = shape[0].value
+        # height = shape[1].value
+        # width = shape[2].value
+        channel_num = shape[3].value
+
+        mask = tf.expand_dims(mask, 3)
+        fg_img = tf.mul(img, mask)
+        fg_num_pixels = tf.reduce_sum(mask, [1, 2, 3], True)
+
+        mu = tf.reduce_sum(fg_img, [1, 2], True)
+        mu = tf.truediv(mu, fg_num_pixels)
+
+        # shape is batch_size * num_pixels * channel_num
+        img_hat = fg_img - mu
+        fg_img_hat = tf.mul(img_hat, mask)
+        fg_img_hat = tf.reshape(fg_img_hat, [batch_size, -1, channel_num])
+
+        # shape is batch_size * channel_num * num_pixels
+        fg_img_hat_transpose = tf.transpose(fg_img_hat, perm=[0, 2, 1])
+        # shape is batch_size * channle_num * channle_num
+        covariance = tf.batch_matmul(fg_img_hat_transpose, fg_img_hat)
+        covariance = tf.truediv(tf.expand_dims(covariance, 3), fg_num_pixels)
+
+        return mu, covariance
+
+    def compute_color_like_loss(self, real_images, fake_images, masks, lamda):
         like_loss = tf.constant(0.)
-        fake_mu, fake_covariance = compute_mean_covariance(self.fake_images)
-        real_mu, real_covariance = compute_mean_covariance(self.fg_images)
+        # fake_mu, fake_covariance = compute_mean_covariance(self.fake_images)
+        # real_mu, real_covariance = compute_mean_covariance(self.fg_images)
+
+        fake_mu, fake_covariance = self.compute_mean_covariance_with_mask(fake_images, masks)
+        self.log_vars.append(("hist_fake_covariance", fake_covariance))
+        self.log_vars.append(("hist_fake_mu", fake_mu))
+        real_mu, real_covariance = self.compute_mean_covariance_with_mask(real_images, masks)
+        self.log_vars.append(("hist_real_covariance", real_covariance))
+        self.log_vars.append(("hist_real_mu", real_mu))
 
         like_loss_mu = lamda * tf.reduce_mean(tf.square(fake_mu - real_mu)) / 2.
         self.log_vars.append(("g_like_loss_mu", like_loss_mu))
@@ -280,11 +328,11 @@ class ConInfoGANTrainer(object):
         self.log_vars.append(("g_like_loss", like_loss))
         return like_loss
 
-    def compute_like_loss(self):
+    def compute_like_loss(self, real_images, fake_images):
         like_loss = tf.constant(0.)
 
-        fake_L2_ftr = self.model.d_L2_template.construct(input=self.fake_images)
-        real_L2_ftr = self.model.d_L2_template.construct(input=self.fg_images)
+        fake_L2_ftr = self.model.d_L2_template.construct(input=fake_images)
+        real_L2_ftr = self.model.d_L2_template.construct(input=real_images)
         # like_loss_L2 = tf.reduce_mean(tf.square(fake_L2_ftr - real_L2_ftr)) / 2.
         # self.log_vars.append(("g_like_loss_L2", like_loss_L2))
         # like_loss += like_loss_L2
@@ -332,15 +380,16 @@ class ConInfoGANTrainer(object):
         mutual_info = prior_entropy - cross_entropy
         return mutual_info
 
-    def compute_g_loss(self):
-        interp_fake_g = self.model.get_discriminator(self.interp_fake_images, self.interp_c)  # self.interp_embeddings
-        fake_g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(interp_fake_g, tf.ones_like(interp_fake_g)))
+    def compute_g_loss(self, fake_images, noise_images, c):
+        # fake_g = self.model.get_discriminator(fake_images, self.embeddings)  # self.interp_embeddings
+        fake_g = self.model.get_noise_discriminator(fake_images)
+        fake_g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(fake_g, tf.ones_like(fake_g)))
         if B_PRETRAIN == 0:
             self.log_vars.append(("g_loss_fake", fake_g_loss))
         generator_loss_cond = fake_g_loss
 
         #
-        noise_g = self.model.get_noise_discriminator(self.noise_images)
+        noise_g = self.model.get_noise_discriminator(noise_images)
         noise_g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(noise_g, tf.ones_like(noise_g)))
         if B_PRETRAIN == 1:
             self.log_vars.append(("g_loss_noise", noise_g_loss))
@@ -403,7 +452,7 @@ class ConInfoGANTrainer(object):
         current_img_summary = tf.image_summary(filename, imgs)
         return current_img_summary, imgs
 
-    def visualization(self):
+    def visualization(self, real_images):
         if TYPE_KL_LOSS == 0:
             c = self.sample_encoded_context(self.embeddings)
         elif TYPE_KL_LOSS == 1:
@@ -414,16 +463,16 @@ class ConInfoGANTrainer(object):
         z = tf.random_normal([self.batch_size, cfg.Z_DIM])
         fake_x = self.model.get_generator(tf.concat(1, [c, z]))
         fake_sum_train, superimage_train = self.visualize_one_superimage(fake_x[:64, :, :, :],
-                                                                         self.fg_images[:64, :, :, :],
+                                                                         real_images[:64, :, :, :],
                                                                          8, "train_on_text")
         fake_sum_test, superimage_test = self.visualize_one_superimage(fake_x[64:128, :, :, :],
-                                                                       self.fg_images[64:128, :, :, :],
+                                                                       real_images[64:128, :, :, :],
                                                                        8, "test_on_text")
 
         noise_c = tf.random_normal([self.batch_size, cfg.GAN.EMBEDDING_DIM])
         noise_x = self.model.get_generator(tf.concat(1, [noise_c, z]))
         noise_sum_train, _ = self.visualize_one_superimage(noise_x[:64, :, :, :],
-                                                           self.fg_images[:64, :, :, :],
+                                                           real_images[:64, :, :, :],
                                                            8, "train_on_noise")
         self.superimages = tf.concat(0, [superimage_train, superimage_test])
         self.image_summary = tf.merge_summary([fake_sum_train, fake_sum_test, noise_sum_train])
@@ -517,9 +566,12 @@ class ConInfoGANTrainer(object):
                     pbar = ProgressBar(maxval=updates_per_epoch, widgets=widgets)
                     pbar.start()
 
-                    if epoch % 30 == 0 and epoch != 0 and generator_learning_rate > 0.000001:
-                        generator_learning_rate *= 0.5  # TODO:0.5; 0.2
-                        discriminator_learning_rate *= 0.5
+                    # if epoch % 30 == 0 and epoch != 0 and generator_learning_rate > 0.000001:
+                        # generator_learning_rate *= 0.5  # TODO:0.5; 0.2
+                        # discriminator_learning_rate *= 0.5
+                    if generator_learning_rate > 0.000001:
+                        generator_learning_rate = generator_learning_rate * 0.97
+                        discriminator_learning_rate = discriminator_learning_rate * 0.95
 
                     all_log_vals = []
                     if B_PRETRAIN:
