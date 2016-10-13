@@ -182,17 +182,17 @@ class ConInfoGANTrainer(object):
             fake_images = self.model.get_generator(tf.concat(1, [c, z]))
 
             ####################################################################
-            interp_embeddings = self.get_interp_embeddings(self.embeddings)
+            self.interp_embeddings = self.get_interp_embeddings(self.embeddings)
             if TYPE_KL_LOSS == 0:
-                interp_c = self.sample_encoded_context(interp_embeddings)
+                interp_c = self.sample_encoded_context(self.interp_embeddings)
                 # self.log_vars.append(("g_c_mean1", mean1))
                 # self.log_vars.append(("g_c_var1", var1))
                 # self.log_vars.append(("g_c_mean2", mean2))
                 # self.log_vars.append(("g_c_var2", var2))
             elif TYPE_KL_LOSS == 1:
-                interp_c, interp_kl_loss = self.sample_encoded_context(interp_embeddings)
+                interp_c, interp_kl_loss = self.sample_encoded_context(self.interp_embeddings)
             elif TYPE_KL_LOSS == 2:
-                interp_c, interp_kl_loss, mean, log_sigma = self.sample_encoded_context(interp_embeddings)
+                interp_c, interp_kl_loss, mean, log_sigma = self.sample_encoded_context(self.interp_embeddings)
                 self.log_vars.append(("g_c_mean1", mean))
                 self.log_vars.append(("g_c_log_sigma", log_sigma))
             if cfg.NOISE_TYPE == 'normal':
