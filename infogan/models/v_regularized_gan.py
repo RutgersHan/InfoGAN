@@ -49,6 +49,7 @@ class ConRegularizedGAN(object):
         if cfg.GAN.NETWORK_TYPE == "default":
             with tf.variable_scope("g_net"):
                 self.g_context_template = self.context_embedding()
+                self.g_context_gaussian_template = self.context_gaussian_embedding()
                 self.generator_template = self.generator()
 
             with tf.variable_scope("d_net"):
@@ -57,20 +58,35 @@ class ConRegularizedGAN(object):
                 self.d_L4_template, self.d_L4_sub1_template,\
                     self.d_L4_sub2_template = self.L4_from_L3_discriminator()
                 # self.d_start_template = self.start_discriminator()
-                self.d_context_template = self.context_embedding()
+                # self.d_context_template = self.context_embedding()
                 self.d_end_template = self.end_discriminator()
+                self.context_reconstruct_template = self.context_reconstruction()
+
+                self.d_end_noise_template = self.end_noise_discriminator()
         else:
             raise NotImplementedError
 
     def context_embedding(self):
         template = (pt.template("input").
-                    custom_fully_connected(self.ef_dim).
-                    apply(leaky_rectify, leakiness=0.2))
+                    custom_fully_connected(self.ef_dim))  # .apply(leaky_rectify, leakiness=0.2))
         return template
 
     def generate_condition(self, c_var):
         conditions = self.g_context_template.construct(input=c_var)
         return conditions
+
+    def context_gaussian_embedding(self):
+        template = (pt.template("input").
+                    custom_fully_connected(self.ef_dim * 2).
+                    apply(leaky_rectify, leakiness=0.2))
+        return template
+
+    def generate_gaussian_condition(self, c_var):
+        conditions = self.g_context_gaussian_template.construct(input=c_var)
+        mean = conditions[:, :self.ef_dim]
+        log_sigma = conditions[:, self.ef_dim:]
+        condition_list = [mean, log_sigma]
+        return condition_list
 
     def generator(self):
         node1_0 = \
@@ -206,7 +222,34 @@ class ConRegularizedGAN(object):
              custom_fully_connected(1))
         return template
 
-    def get_discriminator(self, x_var, c_var):
+    def get_discriminator(self, x_var, c_code):
+        x_L2 = self.d_L2_template.construct(input=x_var)
+        x_L3 = self.d_L3_template.construct(L2=x_L2)
+        x_code = self.d_L4_template.construct(L3=x_L3)
+
+        # TODO: dhouble check whether tail is correct
+        c_code = tf.expand_dims(tf.expand_dims(c_code, 1), 1)
+        c_code = tf.tile(c_code, [1, 4, 4, 1])
+        x_c_code = tf.concat(3, [x_code, c_code])
+
+        return self.d_end_template.construct(input=x_c_code)
+
+    def end_noise_discriminator(self):
+        template = \
+            (pt.template("input").  # 128*9*4*4
+             custom_fully_connected(1))
+        return template
+
+    def get_noise_discriminator(self, x_var):
+        x_L2 = self.d_L2_template.construct(input=x_var)
+        x_L3 = self.d_L3_template.construct(L2=x_L2)
+        x_code = self.d_L4_template.construct(L3=x_L3)
+
+        return self.d_end_noise_template.construct(input=x_code)
+
+
+
+    def get_discriminator_old(self, x_var, c_var):
         x_L2 = self.d_L2_template.construct(input=x_var)
         x_L3 = self.d_L3_template.construct(L2=x_L2)
         x_code = self.d_L4_template.construct(L3=x_L3)
@@ -220,8 +263,26 @@ class ConRegularizedGAN(object):
         x_c_code = tf.concat(3, [x_code, c_code])
         return self.d_end_template.construct(input=x_c_code)
 
+    def context_reconstruction(self):
+        # ####Use output from d_L4_template as input
+        reconstruct_template = \
+            (pt.template("input").
+             custom_conv2d(self.df_dim * 4, k_h=1, k_w=1, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(leaky_rectify, 0.2).
+             custom_fully_connected(self.ef_dim * 2))
+        return reconstruct_template
 
+    def reconstuct_context(self, x_var):
+        x_L2 = self.d_L2_template.construct(input=x_var)
+        x_L3 = self.d_L3_template.construct(L2=x_L2)
+        x_L4 = self.d_L4_template.construct(L3=x_L3)
 
+        conditions = self.context_reconstruct_template.construct(input=x_L4)
+        mean = conditions[:, :self.ef_dim]
+        log_sigma = conditions[:, self.ef_dim:]
+        condition_list = [mean, log_sigma]
+        return condition_list
 
     def disc_reg_z(self, reg_z_var):
         ret = []
