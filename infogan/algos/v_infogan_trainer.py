@@ -138,7 +138,7 @@ class ConInfoGANTrainer(object):
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
-                self.visualization()
+                self.visualization(cfg.TRAIN.NUM_COPY)
                 print("success")
 
     # ####get discriminator_loss and generator_loss for FG#####################
@@ -212,43 +212,43 @@ class ConInfoGANTrainer(object):
         current_img_summary = tf.image_summary(filename, imgs)
         return current_img_summary, imgs
 
-    def visualization(self):
+    def visualization(self, n):
         c = self.sample_encoded_context(self.embeddings)
         z = tf.random_normal([self.batch_size, cfg.Z_DIM])
         fake_x = self.model.get_generator(tf.concat(1, [c, z]))
-        fake_sum_train, superimage_train = self.visualize_one_superimage(fake_x[:64, :, :, :],
-                                                                         self.images[:64, :, :, :],
-                                                                         8, "train_on_text")
-        fake_sum_test, superimage_test = self.visualize_one_superimage(fake_x[64:128, :, :, :],
-                                                                       self.images[64:128, :, :, :],
-                                                                       8, "test_on_text")
+        fake_sum_train, superimage_train = self.visualize_one_superimage(fake_x[:n * n, :, :, :],
+                                                                         self.images[:n * n, :, :, :],
+                                                                         n, "train_on_text")
+        fake_sum_test, superimage_test = self.visualize_one_superimage(fake_x[n * n:2 * n * n, :, :, :],
+                                                                       self.images[n * n:2 * n * n, :, :, :],
+                                                                       n, "test_on_text")
         self.superimages = tf.concat(0, [superimage_train, superimage_test])
         self.image_summary = tf.merge_summary([fake_sum_train, fake_sum_test])
 
-    def preprocess(self, x):
+    def preprocess(self, x, n):
         # make sure every row with 10 column have the same embeddings
-        for i in range(8):
-            for j in range(1, 8):
-                x[i * 8 + j] = x[i * 8]
+        for i in range(n):
+            for j in range(1, n):
+                x[i * n + j] = x[i * n]
         return x
 
-    def epoch_sum_images(self, sess):
-        images_train, _, _, embeddings_train, captions_train, _, _ = self.dataset.train.next_batch(64, 1)
-        images_train = self.preprocess(images_train)
-        # masks_train = self.preprocess(masks_train)
-        embeddings_train = self.preprocess(embeddings_train)
+    def epoch_sum_images(self, sess, n):
+        images_train, _, _, embeddings_train, captions_train, _, _ = self.dataset.train.next_batch(n * n, 4)
+        images_train = self.preprocess(images_train, n)
+        # masks_train = self.preprocess(masks_train, n)
+        embeddings_train = self.preprocess(embeddings_train, n)
 
-        images_test, _, _, embeddings_test, captions_test, _, _ = self.dataset.test.next_batch(64, 1)
-        images_test = self.preprocess(images_test)
-        # masks_test = self.preprocess(masks_test)
-        embeddings_test = self.preprocess(embeddings_test)
+        images_test, _, _, embeddings_test, captions_test, _, _ = self.dataset.test.next_batch(n * n, 1)
+        images_test = self.preprocess(images_test, n)
+        # masks_test = self.preprocess(masks_test, n)
+        embeddings_test = self.preprocess(embeddings_test, n)
 
         images = np.concatenate([images_train, images_test], axis=0)
         # masks = np.concatenate([masks_train, masks_test], axis=0)
         embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
 
-        if self.batch_size > 128:
-            images_pad, _, _, embeddings_pad, _, _, _ = self.dataset.test.next_batch(self.batch_size - 128, 1)
+        if self.batch_size > 2 * n * n:
+            images_pad, _, _, embeddings_pad, _, _, _ = self.dataset.test.next_batch(self.batch_size - 2 * n * n, 1)
             images = np.concatenate([images, images_pad], axis=0)
             # masks = np.concatenate([masks, masks_pad], axis=0)
             embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
@@ -259,17 +259,17 @@ class ConInfoGANTrainer(object):
 
         # save images generated for train and test captions
         scipy.misc.imsave('%s/train.jpg' % (self.log_dir), gen_samples[0])
-        pfi_train = open(self.log_dir + "/train.txt", "w")
+        # pfi_train = open(self.log_dir + "/train.txt", "w")
 
         scipy.misc.imsave('%s/test.jpg' % (self.log_dir), gen_samples[1])
         pfi_test = open(self.log_dir + "/test.txt", "w")
-        for row in range(8):
-            pfi_train.write('\n***row %d***\n' % row)
-            pfi_train.write(captions_train[row * 8])
+        for row in range(n):
+            # pfi_train.write('\n***row %d***\n' % row)
+            # pfi_train.write(captions_train[row * n])
 
             pfi_test.write('\n***row %d***\n' % row)
-            pfi_test.write(captions_train[row * 8])
-        pfi_train.close()
+            pfi_test.write(captions_test[row * n])
+        # pfi_train.close()
         pfi_test.close()
 
         return img_summary
@@ -313,7 +313,7 @@ class ConInfoGANTrainer(object):
                     pbar = ProgressBar(maxval=updates_per_epoch, widgets=widgets)
                     pbar.start()
 
-                    if epoch % 25 == 0 and epoch != 0:
+                    if epoch % 100 == 0 and epoch != 0:
                         generator_learning_rate *= 0.5
                         discriminator_learning_rate *= 0.5
 
@@ -353,7 +353,7 @@ class ConInfoGANTrainer(object):
                             fn = saver.save(sess, "%s/%s.ckpt" % (self.checkpoint_dir, snapshot_name))
                             print("Model saved in file: %s" % fn)
 
-                    summary_writer.add_summary(self.epoch_sum_images(sess), counter)
+                    summary_writer.add_summary(self.epoch_sum_images(sess, cfg.TRAIN.NUM_COPY), counter)
 
                     avg_log_vals = np.mean(np.array(all_log_vals), axis=0)
                     dic_logs = {}

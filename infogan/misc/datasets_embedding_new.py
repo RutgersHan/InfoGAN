@@ -231,7 +231,7 @@ class TextDataset(object):
             list_filenames = pickle.load(f)
             print('list_filenames: ', len(list_filenames), list_filenames[0])
         with open(pickle_path + '/class_info.pickle', 'rb') as f:
-             class_id, class_range = pickle.load(f) # I mistakenly named those in convert_new
+            class_id, class_range = pickle.load(f)  # I mistakenly named those in convert_new
 
         array_masks = None
         return Dataset(array_images, array_masks, array_embeddings,
