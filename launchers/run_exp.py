@@ -12,7 +12,8 @@ import sys
 import numpy as np
 
 from infogan.misc.distributions import Uniform, Gaussian, Categorical, MeanBernoulli, Bernoulli
-from infogan.misc.datasets_embedding import TextDataset, AttributeDataset
+from infogan.misc.datasets_embedding_new import TextDataset
+from infogan.misc.datasets_embedding import AttributeDataset
 from infogan.models.v_regularized_gan import ConRegularizedGAN
 from infogan.algos.v_infogan_trainer import ConInfoGANTrainer
 from infogan.misc.utils import mkdir_p
