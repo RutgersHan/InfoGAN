@@ -313,7 +313,8 @@ class ConInfoGANTrainer(object):
                     pbar = ProgressBar(maxval=updates_per_epoch, widgets=widgets)
                     pbar.start()
 
-                    if epoch % 100 == 0 and epoch != 0:
+                    # if epoch % 200 == 0 and epoch != 0:  # for noBN
+                    if epoch % 100 == 0 and epoch != 0:  # for base: with BN
                         generator_learning_rate *= 0.5
                         discriminator_learning_rate *= 0.5
 

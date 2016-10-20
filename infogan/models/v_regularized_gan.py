@@ -159,7 +159,9 @@ class ConRegularizedGAN(object):
              custom_conv2d(self.df_dim * 8, k_h=1, k_w=1, d_h=1, d_w=1).  # 128*8*4*4
              conv_batch_norm().
              apply(leaky_rectify, leakiness=0.2).
-             custom_fully_connected(1))
+             # custom_fully_connected(1))
+             custom_conv2d(1, k_h=4, k_w=4, d_h=4, d_w=4))
+
         return template
 
     def get_discriminator(self, x_var, c_var):
