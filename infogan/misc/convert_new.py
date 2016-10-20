@@ -18,9 +18,10 @@ import pandas as pd
 # TODO: 1. current label is temporary, need to change according to real label
 #       2. Current, only split the data into train, need to handel train, test
 
-IMSIZE = 64
-LOAD_SIZE = 76
-BIRD_DIR = '/home/han/Documents/CVPR2017/InfoGAN/Data/birds'
+IMSIZE = 128  # 64
+LOAD_SIZE = 152  # 76
+# BIRD_DIR = '/home/han/Documents/CVPR2017/InfoGAN/Data/birds'
+BIRD_DIR = '/home/tao/deep_learning/CVPR2017/icml_origin/InfoGAN/Data/birds'
 
 
 def load_mask(data_dir, bbox):
@@ -116,7 +117,6 @@ def save_data_list(class_list, image_lists, data_dir, bbox, b_img,
                    icml16_text_captions, outpath):
     images = []
     icml16_text_embeddings = []
-    file_names = []
     class_id = []
     filenames = []
     class_range = {}

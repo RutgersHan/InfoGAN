@@ -55,6 +55,13 @@ class ConRegularizedGAN(object):
                 self.d_start_template = self.start_discriminator()
                 self.d_context_template = self.context_embedding()
                 self.d_end_template = self.end_discriminator()
+
+            with tf.variable_scope("hr_g_net"):
+                self.hr_generator_start_template = self.hr_generator_start()
+                self.residual_block_template = self.residual_block()
+                self.hr_generator_end_template = self.hr_generator_end()
+            with tf.variable_scope("hr_d_net"):
+                    self.hr_discriminator_template = self.hr_discriminator()
         else:
             raise NotImplementedError
 
@@ -174,6 +181,85 @@ class ConRegularizedGAN(object):
 
         x_c_code = tf.concat(3, [x_code, c_code])
         return self.d_end_template.construct(input=x_c_code)
+
+    # For hr_g and hr_d: from LR images to HR images
+    def residual_block(self):
+        node0_0 = pt.template("input")
+
+        node0_1 = \
+            (node0_0.
+             custom_conv2d(self.gf_dim, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(tf.nn.relu).
+             custom_conv2d(self.gf_dim, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(tf.nn.relu))
+        template = \
+            (node0_0.
+             apply(tf.add, node0_1))
+        return template
+
+    def hr_generator_start(self):
+        template = \
+            (pt.template("input").  # -->64 * 64 * 3
+             custom_conv2d(self.gf_dim, k_h=3, k_w=3, d_h=1, d_w=1).  # 64 * 64 * 64
+             apply(tf.nn.relu))
+        return template
+
+    def hr_generator_end(self):
+        template = \
+            (pt.template("input").  # -->in_h * in_w * 64
+             # custom_deconv2d([0, self.s * 2, self.s * 2, self.gf_dim], k_h=4, k_w=4).  # -->2in_h * 2in_w *64
+             apply(tf.image.resize_nearest_neighbor, [self.s * 2, self.s * 2]).
+             custom_conv2d(self.gf_dim, k_h=3, k_w=3, d_h=1, d_w=1).
+             # conv_batch_norm().
+             apply(tf.nn.relu).
+             #  # custom_deconv2d([0, self.s * 4, self.s * 4, self.gf_dim], k_h=4, k_w=4).  # -->4in_h * 4in_w * 64
+             #  apply(tf.image.resize_nearest_neighbor, [self.s * 4, self.s * 4]).
+             #  custom_conv2d(self.gf_dim, k_h=3, k_w=3, d_h=1, d_w=1).
+             #  # conv_batch_norm().
+             #  apply(tf.nn.relu).
+             custom_conv2d(3, k_h=3, k_w=3, d_h=1, d_w=1).  # -->4in_h * 4in_w * 3
+             apply(tf.nn.tanh))
+        return template
+
+    def hr_get_generator(self, x_var):  # x_var = self.s * self.s *3
+        node0 = self.hr_generator_start_template.construct(input=x_var)  # -->in_h * in_w * 64
+
+        node1 = self.residual_block_template.construct(input=node0)
+        node2 = self.residual_block_template.construct(input=node1)
+        node3 = self.residual_block_template.construct(input=node2)
+        node4 = self.residual_block_template.construct(input=node3)
+        node5 = self.residual_block_template.construct(input=node4)
+        node6 = self.residual_block_template.construct(input=node5)
+
+        return self.hr_generator_end_template.construct(input=node6)  # -->2in_h * 2in_w * 3
+
+    def hr_discriminator(self):
+        template = \
+            (pt.template("input").   # -->128 * 128 * 6
+             custom_conv2d(self.df_dim, k_h=5, k_w=5).  # -->64 * 64 * 64
+             # conv_batch_norm().
+             apply(leaky_rectify).
+             custom_conv2d(self.df_dim * 2, k_h=5, k_w=5).  # -->32 * 32 * 128
+             # conv_batch_norm().
+             apply(leaky_rectify).
+             custom_conv2d(self.df_dim * 4, k_h=3, k_w=3).  # -->16 * 16 * 256
+             # conv_batch_norm().
+             apply(leaky_rectify).
+             custom_conv2d(self.df_dim * 8, k_h=3, k_w=3).  # -->8 * 8 * 512
+             # conv_batch_norm().
+             apply(leaky_rectify).
+             custom_conv2d(self.df_dim * 2, k_h=3, k_w=3, d_h=1, d_w=1).  # -->8 * 8 * 128
+             # conv_batch_norm().
+             apply(leaky_rectify).
+             custom_fully_connected(1))
+
+        return template
+
+    def hr_get_discriminator(self, x1_var, x2_var):
+        x_var = tf.concat(3, [x1_var, x2_var])  # -->128 * 128 * 6
+        return self.hr_discriminator_template.construct(input=x_var)
 
 
 

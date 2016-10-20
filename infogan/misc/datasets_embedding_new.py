@@ -11,12 +11,12 @@ from sklearn import preprocessing
 from infogan.misc.convert_new import get_class_image_list
 
 class Dataset(object):
-    def __init__(self, images, masks=None, embeddings=None,
+    def __init__(self, images, hr_images=None, embeddings=None,
                  filenames=None, workdir=None,
                  bg_images=None, labels=None, aug_flag=True,
                  class_id=None, class_range=None):
         self._images = images
-        self._masks = masks
+        self._hr_images = hr_images
         self._embeddings = embeddings
         self._filenames = filenames
         self.workdir = workdir
@@ -35,6 +35,10 @@ class Dataset(object):
     @property
     def images(self):
         return self._images
+
+    @property
+    def hr_images(self):
+        return self._hr_images
 
     @property
     def labels(self):
@@ -60,14 +64,14 @@ class Dataset(object):
     def epochs_completed(self):
         return self._epochs_completed
 
-    def transform(self, images):
+    def transform(self, images, imsize):
         if self._aug_flag:
-            transformed_images = np.zeros([images.shape[0], self._default_size, self._default_size, 3])
+            transformed_images = np.zeros([images.shape[0], imsize, imsize, 3])
             ori_size = images.shape[1]
             for i in range(images.shape[0]):
-                h1 = int(np.floor((ori_size-self._default_size) * np.random.random()))
-                w1 = int(np.floor((ori_size-self._default_size) * np.random.random()))
-                cropped_image = images[i][w1: w1 + self._default_size, h1: h1 + self._default_size, :]
+                h1 = int(np.floor((ori_size - imsize) * np.random.random()))
+                w1 = int(np.floor((ori_size - imsize) * np.random.random()))
+                cropped_image = images[i][w1: w1 + imsize, h1: h1 + imsize, :]
                 if random.random() > 0.5:
                     transformed_images[i] = np.fliplr(cropped_image)
                 else:
@@ -153,24 +157,22 @@ class Dataset(object):
             self._index_in_epoch = batch_size
             assert batch_size <= self._num_examples
         end = self._index_in_epoch
-        # if the input image has values in [0, 255], use this self.transform()
-        # sampled_images = self.transform(self._images[start:end])
         current_ids = self._perm[start:end]
         fake_ids = np.random.randint(self._num_examples, size=batch_size)
         collision_flag = (self._class_id[current_ids] == self._class_id[fake_ids])
         fake_ids[collision_flag] = (fake_ids[collision_flag] +
                                     np.random.randint(100, 200)) % self._num_examples
 
-
         sampled_images = self._images[current_ids]
         sampled_wrong_images = self._images[fake_ids, :, :, :]
-        sampled_images = self.transform(sampled_images)
-        sampled_wrong_images = self.transform(sampled_wrong_images)
+        sampled_images = self.transform(sampled_images, self._default_size)
+        sampled_wrong_images = self.transform(sampled_wrong_images, self._default_size)
         ret_list = [sampled_images, sampled_wrong_images]
 
-        if self._masks is not None:
-            sampled_masks = self._masks[current_ids]
-            ret_list.append(sampled_masks)
+        if self._hr_images is not None:
+            sampled_hr_images = self._hr_images[current_ids]
+            sampled_hr_images = self.transform(sampled_hr_images, self._default_size * 2)
+            ret_list.append(sampled_hr_images)
         else:
             ret_list.append(None)
         if self._embeddings is not None:
@@ -233,8 +235,13 @@ class TextDataset(object):
         with open(pickle_path + '/class_info.pickle', 'rb') as f:
             class_id, class_range = pickle.load(f)  # I mistakenly named those in convert_new
 
-        array_masks = None
-        return Dataset(array_images, array_masks, array_embeddings,
+        array_hr_images = None
+        with open(pickle_path + '/152images.pickle', 'rb') as f:
+            images = pickle.load(f)
+            array_hr_images = np.array([image for image in images])
+            print('array_hr_images: ', array_hr_images.shape)
+
+        return Dataset(array_images, array_hr_images, array_embeddings,
                        list_filenames, self.workdir, None, None,
                        aug_flag, class_id, class_range)
 
