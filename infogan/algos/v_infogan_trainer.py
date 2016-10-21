@@ -285,9 +285,6 @@ class ConInfoGANTrainer(object):
                     saver.restore(sess, self.model_path)
                     counter = self.model_path[self.model_path.rfind('_') + 1:self.model_path.rfind('.')]
                     counter = int(counter)
-                    if not cfg.TRAIN.FLAG:
-                        self.epoch_save_samples(sess, cfg.TRAIN.NUM_COPY)
-                        return
                 else:
                     print("Created model with fresh parameters.")
                     sess.run(tf.initialize_all_variables())
@@ -367,3 +364,52 @@ class ConInfoGANTrainer(object):
                     sys.stdout.flush()
                     if np.any(np.isnan(avg_log_vals)):
                         raise ValueError("NaN detected!")
+
+    def save_batch_images(self, real_images, gen_samples, captions, counter, nrows=4):
+        numImgs = real_images.shape[0]
+        ncols = int(numImgs / nrows)
+        # print('real_images.shape: ', real_images.shape,
+        #       'gen_samples.shape: ', gen_samples.shape)
+        # print('numImgs: ', numImgs,
+        #       'nrows: ', nrows, 'ncols:', ncols)
+        stacked_img = []
+        for i in range(nrows):
+            row_images = []
+            row_samples = []
+            for j in range(ncols):
+                img = real_images[i * ncols + j]
+                row_images.append(img)
+                sample = gen_samples[i * ncols + j]
+                row_samples.append(sample)
+            stacked_img.append(np.concatenate(row_images, axis=1))
+            stacked_img.append(np.concatenate(row_samples, axis=1))
+            stacked_img.append(-1.0 * np.ones([10, img.shape[1] * ncols, 3]))
+        superimage = np.concatenate(stacked_img, axis=0)
+
+        # save images generated for train and test captions
+        scipy.misc.imsave('%s/batch_%d.jpg' % (self.log_dir, counter), superimage)
+        pfi = open('%s/batch_%d.txt' % (self.log_dir, counter), "w")
+        for i in range(numImgs):
+            pfi.write('\n***row %d***\n' % i)
+            pfi.write(captions[i])
+        pfi.close()
+        print('save to: %s/batch_%d' % (self.log_dir, counter))
+
+    def test(self):
+        with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+            with tf.device("/gpu:%d" % cfg.GPU_ID):
+                self.init_opt()
+
+                saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=2)
+                if len(self.model_path) > 0:
+                    print("Reading model parameters from %s" % self.model_path)
+                    saver.restore(sess, self.model_path)
+                    counter = 0
+                    print('_epochs_completed:', self.dataset.test._epochs_completed)
+                    while self.dataset.test._epochs_completed < 1:
+                        images, _, _, embeddings, captions, _, _ = self.dataset.test.next_batch(self.batch_size, 1)
+                        gen_samples = sess.run(self.fake_images, {self.embeddings: embeddings})
+                        self.save_batch_images(images, gen_samples, captions, counter)
+                        counter += 1
+                else:
+                    print("Input a valid model path.")

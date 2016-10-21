@@ -75,25 +75,31 @@ if __name__ == "__main__":
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
 
-    ckt_logs_dir = "ckt_logs/%s/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
-
     datadir = 'Data/%s' % cfg.DATASET_NAME
     filename_test = '%s/%s/test' % (datadir, cfg.FILENAME)
     filename_train = '%s/%s/train' % (datadir, cfg.FILENAME)
     if cfg.ENCODER_INPUT == 'attribute':
         dataset = AttributeDataset(datadir)
         dataset.test, dataset.fixedvisual_test = dataset.get_data(filename_test, 10, 'test')
-        dataset.train, dataset.fixedvisual_train = dataset.get_data(filename_train, 20, 'train')
+        if cfg.TRAIN.FLAG:
+            dataset.train, dataset.fixedvisual_train = dataset.get_data(filename_train, 20, 'train')
     elif cfg.ENCODER_INPUT == 'text':
         dataset = TextDataset(datadir)
         dataset.test = dataset.get_data(filename_test)
-        dataset.train = dataset.get_data(filename_train)
+        if cfg.TRAIN.FLAG:
+            dataset.train = dataset.get_data(filename_train)
     else:
         NotImplementedError
     # for i in range(dataset.fixedvisual_train.embeddings.shape[0]):
     #     print(dataset.fixedvisual_train.embeddings[i])
 
-    mkdir_p(ckt_logs_dir)
+    if cfg.TRAIN.FLAG:
+        ckt_logs_dir = "ckt_logs/%s_tmp/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
+        mkdir_p(ckt_logs_dir)
+    else:
+        s_tmp = cfg.TRAIN.PRETRAINED_MODEL
+        ckt_logs_dir = s_tmp[:s_tmp.find('.ckpt')]
+        mkdir_p(ckt_logs_dir)
 
     latent_spec, con_latent_spec = get_latent_spec()
 
@@ -110,4 +116,7 @@ if __name__ == "__main__":
         ckt_logs_dir=ckt_logs_dir
     )
 
-    algo.train()
+    if cfg.TRAIN.FLAG:
+        algo.train()
+    else:
+        algo.test()
