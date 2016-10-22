@@ -265,15 +265,15 @@ class ConInfoGANTrainer(object):
         self.log_vars.append(("hr_g_loss_fake2", fake2_g_loss))
 
         # TODO: Cotent loss: double check or use other loss function
-        # like_loss = self.hr_compute_like_loss()
-        # self.log_vars.append(("hr_g_loss_like", like_loss))
+        like_loss = self.hr_compute_like_loss()
+        self.log_vars.append(("hr_g_loss_like", like_loss))
 
         # TODO: double check
         self.ft_generator_loss = fake2_g_loss
 
         # TODO: play with the coefficient
-        # self.hr_generator_loss = fake_g_loss + fake2_g_loss + self.like_lamda * like_loss
-        self.hr_generator_loss = fake_g_loss + fake2_g_loss
+        self.hr_generator_loss = fake_g_loss + fake2_g_loss + self.like_lamda * like_loss
+        # self.hr_generator_loss = fake_g_loss + fake2_g_loss
         self.log_vars.append(("hr_g_loss", self.hr_generator_loss))
 
     def prepare_trainer(self):
