@@ -192,11 +192,11 @@ class ConRegularizedGAN(object):
              conv_batch_norm().
              apply(tf.nn.relu).
              custom_conv2d(self.gf_dim, k_h=3, k_w=3, d_h=1, d_w=1).
-             conv_batch_norm().
-             apply(tf.nn.relu))
+             conv_batch_norm())
         template = \
             (node0_0.
-             apply(tf.add, node0_1))
+             apply(tf.add, node0_1).
+             apply(tf.nn.relu))
         return template
 
     def hr_generator_start(self):
@@ -236,8 +236,49 @@ class ConRegularizedGAN(object):
         return self.hr_generator_end_template.construct(input=node6)  # -->2in_h * 2in_w * 3
 
     def hr_discriminator(self):
+        node1_0 = \
+            (pt.template("input").  # 128 * 128 * 3
+             custom_conv2d(self.df_dim, k_h=4, k_w=4).  # 64 * 64 * 64
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 2, k_h=4, k_w=4).  # 32 * 32 * 64 *2
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 4, k_h=4, k_w=4).  # 16 * 16 * 64 * 4
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 8, k_h=4, k_w=4).  # 8 * 8 * 64 * 8
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 16, k_h=4, k_w=4).  # 4 * 4 * 64 * 16
+             conv_batch_norm())
+
+        node1_1 = \
+            (node1_0.
+             custom_conv2d(self.df_dim * 4, k_h=1, k_w=1, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 4, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm().
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 16, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm())
+
         template = \
-            (pt.template("input").   # -->128 * 128 * 6
+            (node1_0.
+             apply(tf.add, node1_1).
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(1, k_h=4, k_w=4, d_h=4, d_w=4))
+
+        return template
+
+    def hr_get_discriminator(self, hr_var):
+        # resized_lr_var = tf.image.resize_nearest_neighbor(lr_var, [self.s * 2, self.s * 2])
+        # x_var = tf.concat(3, [hr_var, resized_lr_var])  # -->128 * 128 * 6
+        return self.hr_discriminator_template.construct(input=hr_var)
+
+    def hr_discriminator_old(self):
+        template = \
+            (pt.template("input").   # -->128 * 128 * 3
              custom_conv2d(self.df_dim, k_h=5, k_w=5).  # -->64 * 64 * 64
              # conv_batch_norm().
              apply(leaky_rectify).
@@ -256,11 +297,6 @@ class ConRegularizedGAN(object):
              custom_fully_connected(1))
 
         return template
-
-    def hr_get_discriminator(self, x1_var, x2_var):
-        x_var = tf.concat(3, [x1_var, x2_var])  # -->128 * 128 * 6
-        return self.hr_discriminator_template.construct(input=x_var)
-
 
 
 
