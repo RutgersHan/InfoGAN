@@ -11,41 +11,12 @@ import pprint
 import sys
 import numpy as np
 
-from infogan.misc.distributions import Uniform, Gaussian, Categorical, MeanBernoulli, Bernoulli
 from infogan.misc.datasets_embedding_new import TextDataset
 from infogan.misc.datasets_embedding import AttributeDataset
 from infogan.models.v_regularized_gan import ConRegularizedGAN
 from infogan.algos.v_infogan_trainer import ConInfoGANTrainer
 from infogan.misc.utils import mkdir_p
 from infogan.misc.config import cfg, cfg_from_file
-
-
-def get_latent_spec():
-    latent_spec = []
-    if cfg.GAN.LATENT_SPEC.UNIFORM_FLAG:
-        latent_spec.append((Uniform(cfg.GAN.LATENT_SPEC.UNIFORM.DIM),
-                            cfg.GAN.LATENT_SPEC.UNIFORM.REG))
-    if cfg.GAN.LATENT_SPEC.GAUSSIAN_FLAG:
-        latent_spec.append((Gaussian(cfg.GAN.LATENT_SPEC.GAUSSIAN.DIM),
-                            cfg.GAN.LATENT_SPEC.GAUSSIAN.REG))
-    if cfg.GAN.LATENT_SPEC.CAT_FLAG:
-        latent_spec.append((Categorical(cfg.GAN.LATENT_SPEC.CAT.DIM),
-                            cfg.GAN.LATENT_SPEC.CAT.REG))
-    if cfg.GAN.LATENT_SPEC.BERNOULLI_FLAG:
-        latent_spec.append((Bernoulli(cfg.GAN.LATENT_SPEC.BERNOULLI.DIM),
-                            cfg.GAN.LATENT_SPEC.BERNOULLI.REG))
-
-    con_latent_spec = []
-    if cfg.GAN.CON_LATENT_SPEC.UNIFORM_FLAG:
-        con_latent_spec.append(Uniform(cfg.GAN.CON_LATENT_SPEC.UNIFORM.DIM))
-    if cfg.GAN.CON_LATENT_SPEC.GAUSSIAN_FLAG:
-        con_latent_spec.append(Gaussian(cfg.GAN.CON_LATENT_SPEC.GAUSSIAN.DIM))
-    if cfg.GAN.CON_LATENT_SPEC.CAT_FLAG:
-        con_latent_spec.append(Categorical(cfg.GAN.CON_LATENT_SPEC.CAT.DIM))
-    if cfg.GAN.CON_LATENT_SPEC.BERNOULLI_FLAG:
-        con_latent_spec.append(Bernoulli(cfg.GAN.CON_LATENT_SPEC.BERNOULLI.DIM))
-
-    return latent_spec, con_latent_spec
 
 
 def parse_args():
@@ -101,12 +72,7 @@ if __name__ == "__main__":
         ckt_logs_dir = s_tmp[:s_tmp.find('.ckpt')]
         mkdir_p(ckt_logs_dir)
 
-    latent_spec, con_latent_spec = get_latent_spec()
-
     model = ConRegularizedGAN(
-        output_dist=MeanBernoulli(dataset.image_dim),
-        latent_spec=latent_spec,
-        con_latent_spec=con_latent_spec,
         image_shape=dataset.image_shape
     )
 

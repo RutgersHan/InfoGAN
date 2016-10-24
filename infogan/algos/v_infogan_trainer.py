@@ -11,7 +11,6 @@ import sys
 from six.moves import range
 from progressbar import ETA, Bar, Percentage, ProgressBar
 
-from infogan.misc.distributions import Bernoulli, Gaussian, Categorical
 from infogan.misc.config import cfg
 
 TINY = 1e-8

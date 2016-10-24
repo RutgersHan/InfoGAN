@@ -1,4 +1,3 @@
-from infogan.misc.distributions import Product, Distribution, Gaussian, Categorical, Bernoulli
 import prettytensor as pt
 import tensorflow as tf
 import infogan.misc.custom_ops
@@ -10,38 +9,13 @@ from infogan.misc.config import cfg
 
 
 class ConRegularizedGAN(object):
-    def __init__(self, output_dist, latent_spec, con_latent_spec,
-                 image_shape):
-        """
-        :type output_dist: Distribution e.g. MeanBernoulli(dataset.image_dim),
-        :type latent_spec: list[(Distribution, bool)]
-                    e.g.    latent_spec = [
-                            (Uniform(62), False),
-                            (Categorical(10), True),
-                            (Uniform(1, fix_std=True), True),
-                            (Uniform(1, fix_std=True), True),
-                        ]
-        :type con_latent_spec:  (LatentGaussian, (ef_dim, fix_std=True), True)
-        :type batch_size: int
-        :type network_type: string
-        """
-        self.output_dist = output_dist
-        self.latent_spec = latent_spec
-        self.latent_dist = Product([x for x, _ in latent_spec])
-        self.con_latent_spec = con_latent_spec
-        self.con_latent_dist = Product([x for x in con_latent_spec])
-        self.reg_latent_dist = Product([x for x, reg in latent_spec if reg])
-        self.nonreg_latent_dist = Product([x for x, reg in latent_spec if not reg])
+    def __init__(self, image_shape):
         self.batch_size = cfg.TRAIN.BATCH_SIZE
         self.network_type = cfg.GAN.NETWORK_TYPE
         self.image_shape = image_shape
         self.gf_dim = cfg.GAN.GF_DIM
         self.df_dim = cfg.GAN.DF_DIM
         self.ef_dim = cfg.GAN.EMBEDDING_DIM
-        assert all(isinstance(x, (Gaussian, Categorical, Bernoulli)) for x in self.reg_latent_dist.dists)
-
-        self.reg_cont_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, Gaussian)])
-        self.reg_disc_latent_dist = Product([x for x in self.reg_latent_dist.dists if isinstance(x, (Categorical, Bernoulli))])
 
         self.image_shape = image_shape
         self.s = image_shape[0]
@@ -174,92 +148,3 @@ class ConRegularizedGAN(object):
 
         x_c_code = tf.concat(3, [x_code, c_code])
         return self.d_end_template.construct(input=x_c_code)
-
-
-
-
-    def disc_reg_z(self, reg_z_var):
-        ret = []
-        for dist_i, z_i in zip(self.reg_latent_dist.dists, self.reg_latent_dist.split_var(reg_z_var)):
-            if isinstance(dist_i, (Categorical, Bernoulli)):
-                ret.append(z_i)
-        return self.reg_disc_latent_dist.join_vars(ret)
-
-    def cont_reg_z(self, reg_z_var):
-        ret = []
-        for dist_i, z_i in zip(self.reg_latent_dist.dists, self.reg_latent_dist.split_var(reg_z_var)):
-            if isinstance(dist_i, Gaussian):
-                ret.append(z_i)
-        return self.reg_cont_latent_dist.join_vars(ret)
-
-    def disc_reg_dist_info(self, reg_dist_info):
-        ret = []
-        for dist_i, dist_info_i in zip(self.reg_latent_dist.dists, self.reg_latent_dist.split_dist_info(reg_dist_info)):
-            if isinstance(dist_i, (Categorical, Bernoulli)):
-                ret.append(dist_info_i)
-        return self.reg_disc_latent_dist.join_dist_infos(ret)
-
-    def cont_reg_dist_info(self, reg_dist_info):
-        ret = []
-        for dist_i, dist_info_i in zip(self.reg_latent_dist.dists, self.reg_latent_dist.split_dist_info(reg_dist_info)):
-            if isinstance(dist_i, Gaussian):
-                ret.append(dist_info_i)
-        return self.reg_cont_latent_dist.join_dist_infos(ret)
-
-    def reg_z(self, z_var):
-        ret = []
-        for (_, reg_i), z_i in zip(self.latent_spec, self.latent_dist.split_var(z_var)):
-            if reg_i:
-                ret.append(z_i)
-        return self.reg_latent_dist.join_vars(ret)
-
-    def nonreg_z(self, z_var):
-        ret = []
-        for (_, reg_i), z_i in zip(self.latent_spec, self.latent_dist.split_var(z_var)):
-            if not reg_i:
-                ret.append(z_i)
-        return self.nonreg_latent_dist.join_vars(ret)
-
-    def reg_dist_info(self, dist_info):
-        ret = []
-        for (_, reg_i), dist_info_i in zip(self.latent_spec, self.latent_dist.split_dist_info(dist_info)):
-            if reg_i:
-                ret.append(dist_info_i)
-        return self.reg_latent_dist.join_dist_infos(ret)
-
-    def nonreg_dist_info(self, dist_info):
-        ret = []
-        for (_, reg_i), dist_info_i in zip(self.latent_spec, self.latent_dist.split_dist_info(dist_info)):
-            if not reg_i:
-                ret.append(dist_info_i)
-        return self.nonreg_latent_dist.join_dist_infos(ret)
-
-    def combine_reg_nonreg_z(self, reg_z_var, nonreg_z_var):
-        reg_z_vars = self.reg_latent_dist.split_var(reg_z_var)
-        reg_idx = 0
-        nonreg_z_vars = self.nonreg_latent_dist.split_var(nonreg_z_var)
-        nonreg_idx = 0
-        ret = []
-        for idx, (dist_i, reg_i) in enumerate(self.latent_spec):
-            if reg_i:
-                ret.append(reg_z_vars[reg_idx])
-                reg_idx += 1
-            else:
-                ret.append(nonreg_z_vars[nonreg_idx])
-                nonreg_idx += 1
-        return self.latent_dist.join_vars(ret)
-
-    def combine_reg_nonreg_dist_info(self, reg_dist_info, nonreg_dist_info):
-        reg_dist_infos = self.reg_latent_dist.split_dist_info(reg_dist_info)
-        reg_idx = 0
-        nonreg_dist_infos = self.nonreg_latent_dist.split_dist_info(nonreg_dist_info)
-        nonreg_idx = 0
-        ret = []
-        for idx, (dist_i, reg_i) in enumerate(self.latent_spec):
-            if reg_i:
-                ret.append(reg_dist_infos[reg_idx])
-                reg_idx += 1
-            else:
-                ret.append(nonreg_dist_infos[nonreg_idx])
-                nonreg_idx += 1
-        return self.latent_dist.join_dist_infos(ret)
