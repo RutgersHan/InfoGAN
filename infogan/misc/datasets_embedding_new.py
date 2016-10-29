@@ -164,6 +164,12 @@ class Dataset(object):
 
         sampled_images = self._images[current_ids]
         sampled_wrong_images = self._images[fake_ids, :, :, :]
+        sampled_images = sampled_images.astype(np.float32)
+        sampled_wrong_images = sampled_wrong_images.astype(np.float32)
+        sampled_images = sampled_images * (2. / 255) - 1.
+        sampled_wrong_images = sampled_wrong_images * (2. / 255) - 1.
+
+
         sampled_images = self.transform(sampled_images)
         sampled_wrong_images = self.transform(sampled_wrong_images)
         ret_list = [sampled_images, sampled_wrong_images]

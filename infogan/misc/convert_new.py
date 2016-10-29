@@ -18,9 +18,9 @@ import pandas as pd
 # TODO: 1. current label is temporary, need to change according to real label
 #       2. Current, only split the data into train, need to handel train, test
 
-IMSIZE = 64
-LOAD_SIZE = 76
-BIRD_DIR = '/home/han/Documents/CVPR2017/InfoGAN/Data/birds'
+IMSIZE = 256
+LOAD_SIZE = int(IMSIZE * 76 / 64)
+BIRD_DIR = '/home/tao/deep_learning/CVPR2017/InfoGAN/Data/birds'
 
 
 def load_mask(data_dir, bbox):
@@ -90,11 +90,11 @@ def convert_birds_dataset_attribute_pickle(data_dir):
 
     save_data_list(training_class_list, class_filenames, data_dir, bbox, b_img,
                    icml16_text_captions,
-                   os.path.join(data_dir, 'pickle_list/train/'))
+                   os.path.join(data_dir, 'pickle/train/'))
     # ## For Test data
     save_data_list(test_class_list, class_filenames, data_dir, bbox, b_img,
                    icml16_text_captions,
-                   os.path.join(data_dir, 'pickle_list/test/'))
+                   os.path.join(data_dir, 'pickle/test/'))
 
 
 
@@ -128,7 +128,7 @@ def save_data_list(class_list, image_lists, data_dir, bbox, b_img,
     if bbox:
         image_dir = os.path.join(data_dir, 'images_cropped')
     else:
-        image_dir = os.path.join(data_dir, 'images')
+        image_dir = os.path.join(data_dir, 'images_custom_cropped')
 
     for i, c in enumerate(class_list):
         class_range[c] = []
@@ -142,7 +142,11 @@ def save_data_list(class_list, image_lists, data_dir, bbox, b_img,
                     img = get_image(f_name, IMSIZE, is_crop=False, resize_w=IMSIZE)
                 else:
                     img = get_image(f_name, LOAD_SIZE, is_crop=False, resize_w=LOAD_SIZE)
-                images.append(colorize(img))
+                img = colorize(img)
+                img += 1.
+                img *= (255. / 2.)
+                img = img.astype('uint8')
+                images.append(img)
 
             if icml16_text_captions is not None:
                 icml16_text_embeddings.append(icml16_text_captions[f])
