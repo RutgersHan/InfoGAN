@@ -12,7 +12,6 @@ import sys
 import numpy as np
 
 from infogan.misc.datasets_embedding_new import TextDataset
-from infogan.misc.datasets_embedding import AttributeDataset
 from infogan.models.v_regularized_gan import ConRegularizedGAN
 from infogan.algos.v_infogan_trainer import ConInfoGANTrainer
 from infogan.misc.utils import mkdir_p
@@ -47,30 +46,17 @@ if __name__ == "__main__":
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
 
     datadir = 'Data/%s' % cfg.DATASET_NAME
+    dataset = TextDataset(datadir)
     filename_test = '%s/%s/test' % (datadir, cfg.FILENAME)
-    filename_train = '%s/%s/train' % (datadir, cfg.FILENAME)
-    if cfg.ENCODER_INPUT == 'attribute':
-        dataset = AttributeDataset(datadir)
-        dataset.test, dataset.fixedvisual_test = dataset.get_data(filename_test, 10, 'test')
-        if cfg.TRAIN.FLAG:
-            dataset.train, dataset.fixedvisual_train = dataset.get_data(filename_train, 20, 'train')
-    elif cfg.ENCODER_INPUT == 'text':
-        dataset = TextDataset(datadir)
-        dataset.test = dataset.get_data(filename_test)
-        if cfg.TRAIN.FLAG:
-            dataset.train = dataset.get_data(filename_train)
-    else:
-        NotImplementedError
-    # for i in range(dataset.fixedvisual_train.embeddings.shape[0]):
-    #     print(dataset.fixedvisual_train.embeddings[i])
-
+    dataset.test = dataset.get_data(filename_test)
     if cfg.TRAIN.FLAG:
+        filename_train = '%s/%s/train' % (datadir, cfg.FILENAME)
+        dataset.train = dataset.get_data(filename_train)
         ckt_logs_dir = "ckt_logs/%s_tmp/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
-        mkdir_p(ckt_logs_dir)
     else:
         s_tmp = cfg.TRAIN.PRETRAINED_MODEL
         ckt_logs_dir = s_tmp[:s_tmp.find('.ckpt')]
-        mkdir_p(ckt_logs_dir)
+    mkdir_p(ckt_logs_dir)
 
     model = ConRegularizedGAN(
         image_shape=dataset.image_shape

@@ -16,14 +16,6 @@ from infogan.misc.config import cfg
 TINY = 1e-8
 
 
-def sampleGaussian(mu, log_sigma):
-    """(Differentiably!) draw sample from Gaussian with given shape, subject to random noise epsilon"""
-    with tf.name_scope("sample_gaussian"):
-        # reparameterization trick
-        epsilon = tf.random_normal(tf.shape(log_sigma), name="epsilon")
-        return mu + epsilon * tf.exp(log_sigma)
-
-
 # reduce_mean normalize also the dimension of the embeddings
 def KL_loss(mu, log_sigma):
     with tf.name_scope("KL_divergence"):
@@ -58,13 +50,6 @@ class ConInfoGANTrainer(object):
         self.snapshot_interval = cfg.TRAIN.SNAPSHOT_INTERVAL
         self.model_path = cfg.TRAIN.PRETRAINED_MODEL
 
-        # self.generator_learning_rate = cfg.TRAIN.GENERATOR_LR
-        # self.discriminator_learning_rate = cfg.TRAIN.DISCRIMINATOR_LR
-
-        self.images = None
-        self.masks = None
-        self.embeddings = None
-        self.fg_images = None
         self.log_vars = []
 
     def build_placeholder(self):
@@ -76,9 +61,6 @@ class ConInfoGANTrainer(object):
             tf.float32, [self.batch_size] + self.dataset.image_shape,
             name='wrong_images'
         )
-        # self.masks = tf.placeholder(
-        #     tf.float32, [self.batch_size] + self.dataset.image_shape[:2],
-        #     name='real_masks')
         self.embeddings = tf.placeholder(
             tf.float32, [self.batch_size] + self.dataset.embedding_shape,
             name='conditional_embeddings'
@@ -232,24 +214,20 @@ class ConInfoGANTrainer(object):
         return x
 
     def epoch_sum_images(self, sess, n):
-        images_train, _, _, embeddings_train, captions_train, _, _ = self.dataset.train.next_batch(n * n, 4)
+        images_train, _, embeddings_train, captions_train, _ = self.dataset.train.next_batch(n * n, 4)
         images_train = self.preprocess(images_train, n)
-        # masks_train = self.preprocess(masks_train, n)
         embeddings_train = self.preprocess(embeddings_train, n)
 
-        images_test, _, _, embeddings_test, captions_test, _, _ = self.dataset.test.next_batch(n * n, 1)
+        images_test, _, embeddings_test, captions_test, _ = self.dataset.test.next_batch(n * n, 1)
         images_test = self.preprocess(images_test, n)
-        # masks_test = self.preprocess(masks_test, n)
         embeddings_test = self.preprocess(embeddings_test, n)
 
         images = np.concatenate([images_train, images_test], axis=0)
-        # masks = np.concatenate([masks_train, masks_test], axis=0)
         embeddings = np.concatenate([embeddings_train, embeddings_test], axis=0)
 
         if self.batch_size > 2 * n * n:
-            images_pad, _, _, embeddings_pad, _, _, _ = self.dataset.test.next_batch(self.batch_size - 2 * n * n, 1)
+            images_pad, _, embeddings_pad, _, _ = self.dataset.test.next_batch(self.batch_size - 2 * n * n, 1)
             images = np.concatenate([images, images_pad], axis=0)
-            # masks = np.concatenate([masks, masks_pad], axis=0)
             embeddings = np.concatenate([embeddings, embeddings_pad], axis=0)
         feed_dict = {self.images: images,
                      self.embeddings: embeddings
@@ -258,9 +236,9 @@ class ConInfoGANTrainer(object):
 
         # save images generated for train and test captions
         scipy.misc.imsave('%s/train.jpg' % (self.log_dir), gen_samples[0])
-        # pfi_train = open(self.log_dir + "/train.txt", "w")
-
         scipy.misc.imsave('%s/test.jpg' % (self.log_dir), gen_samples[1])
+
+        # pfi_train = open(self.log_dir + "/train.txt", "w")
         pfi_test = open(self.log_dir + "/test.txt", "w")
         for row in range(n):
             # pfi_train.write('\n***row %d***\n' % row)
@@ -318,7 +296,7 @@ class ConInfoGANTrainer(object):
                     for i in range(updates_per_epoch):
                         pbar.update(i)
                         # training d
-                        images, wrong_images, _, embeddings, _, _, _ = self.dataset.train.next_batch(self.batch_size, 4)
+                        images, wrong_images, embeddings, _, _ = self.dataset.train.next_batch(self.batch_size, 4)
                         feed_dict = {self.images: images,
                                      self.wrong_images: wrong_images,  # self.masks: masks.astype(np.float32),
                                      self.embeddings: embeddings,
@@ -406,7 +384,7 @@ class ConInfoGANTrainer(object):
                     counter = 0
                     print('_epochs_completed:', self.dataset.test._epochs_completed)
                     while self.dataset.test._epochs_completed < 1:
-                        images, _, _, embeddings, captions, _, _ = self.dataset.test.next_batch(self.batch_size, 1)
+                        images, _, embeddings, captions, _ = self.dataset.test.next_batch(self.batch_size, 1)
                         gen_samples = sess.run(self.fake_images, {self.embeddings: embeddings})
                         self.save_batch_images(images, gen_samples, captions, counter)
                         counter += 1
