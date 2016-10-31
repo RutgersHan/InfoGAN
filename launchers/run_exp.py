@@ -49,10 +49,10 @@ if __name__ == "__main__":
     dataset = TextDataset(datadir)
     filename_test = '%s/%s/test' % (datadir, cfg.FILENAME)
     dataset.test = dataset.get_data(filename_test)
+    filename_train = '%s/%s/train' % (datadir, cfg.FILENAME)
+    dataset.train = dataset.get_data(filename_train)
     if cfg.TRAIN.FLAG:
-        filename_train = '%s/%s/train' % (datadir, cfg.FILENAME)
-        dataset.train = dataset.get_data(filename_train)
-        ckt_logs_dir = "ckt_logs/%s_tmp/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
+        ckt_logs_dir = "ckt_logs/%s/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
     else:
         s_tmp = cfg.TRAIN.PRETRAINED_MODEL
         ckt_logs_dir = s_tmp[:s_tmp.find('.ckpt')]
@@ -71,4 +71,6 @@ if __name__ == "__main__":
     if cfg.TRAIN.FLAG:
         algo.train()
     else:
-        algo.test()
+        algo.save_for_inception_score(dataset.train, subset='train')
+        algo.save_for_inception_score(dataset.test, subset='valid')
+        # algo.test()

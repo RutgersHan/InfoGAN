@@ -6,9 +6,11 @@ from __future__ import print_function
 import numpy as np
 import pickle
 import random
+import scipy.misc
+
 
 class Dataset(object):
-    def __init__(self, images, embeddings=None,
+    def __init__(self, images, imsize, embeddings=None,
                  filenames=None, workdir=None,
                  labels=None, aug_flag=True,
                  class_id=None, class_range=None):
@@ -24,7 +26,7 @@ class Dataset(object):
         self._aug_flag = aug_flag
         self._class_id = np.array(class_id)
         self._class_range = class_range
-        self._default_size = 64
+        self._imsize = imsize
         self._perm = None
 
     @property
@@ -53,12 +55,12 @@ class Dataset(object):
 
     def transform(self, images):
         if self._aug_flag:
-            transformed_images = np.zeros([images.shape[0], self._default_size, self._default_size, 3])
+            transformed_images = np.zeros([images.shape[0], self._imsize, self._imsize, 3])
             ori_size = images.shape[1]
             for i in range(images.shape[0]):
-                h1 = int(np.floor((ori_size - self._default_size) * np.random.random()))
-                w1 = int(np.floor((ori_size - self._default_size) * np.random.random()))
-                cropped_image = images[i][w1: w1 + self._default_size, h1: h1 + self._default_size, :]
+                h1 = int(np.floor((ori_size - self._imsize) * np.random.random()))
+                w1 = int(np.floor((ori_size - self._imsize) * np.random.random()))
+                cropped_image = images[i][w1: w1 + self._imsize, h1: h1 + self._imsize, :]
                 if random.random() > 0.5:
                     transformed_images[i] = np.fliplr(cropped_image)
                 else:
@@ -144,6 +146,29 @@ class Dataset(object):
             ret_list.append(None)
         return ret_list
 
+    def next_batch_test(self, batch_size, start):
+        """Return the next `batch_size` examples from this data set."""
+        if (start + batch_size) > self._num_examples:
+            end = self._num_examples
+            start = end - batch_size
+        else:
+            end = start + batch_size
+
+        sampled_images = self._images[start:end]
+        sampled_images = sampled_images.astype(np.float32)
+        sampled_images = sampled_images * (2. / 255) - 1.  # from [0, 255] to [-1.0, 1.0]
+        sampled_images = self.transform(sampled_images)
+
+        sampled_filenames = self._filenames[start:end]
+        sampled_embeddings = self._embeddings[start:end]
+        _, embedding_num, _ = sampled_embeddings.shape
+        sampled_embeddings_batchs = []
+        for i in range(embedding_num):
+            batch = sampled_embeddings[:, i, :]
+            sampled_embeddings_batchs.append(np.squeeze(batch))
+
+        return sampled_images, sampled_embeddings_batchs, sampled_filenames
+
 
 class TextDataset(object):
     def __init__(self, workdir):
@@ -172,6 +197,6 @@ class TextDataset(object):
         with open(pickle_path + '/class_info.pickle', 'rb') as f:
             class_id, class_range = pickle.load(f)  # I mistakenly named those in convert_new
 
-        return Dataset(array_images, array_embeddings,
+        return Dataset(array_images, self.image_shape[0], array_embeddings,
                        list_filenames, self.workdir, None,
                        aug_flag, class_id, class_range)

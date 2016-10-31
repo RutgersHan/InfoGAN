@@ -7,11 +7,13 @@ import prettytensor as pt
 import tensorflow as tf
 import numpy as np
 import scipy.misc
+import os
 import sys
 from six.moves import range
 from progressbar import ETA, Bar, Percentage, ProgressBar
 
 from infogan.misc.config import cfg
+from infogan.misc.utils import mkdir_p
 
 TINY = 1e-8
 
@@ -97,18 +99,22 @@ class ConInfoGANTrainer(object):
             z = tf.random_normal([self.batch_size, cfg.Z_DIM])
             self.log_vars.append(("hist_c", c))
             self.log_vars.append(("hist_z", z))
-            self.fake_images = self.model.get_generator(tf.concat(1, [c, z]))
+            fake_images = self.model.get_generator(tf.concat(1, [c, z]))
+            # self.fake_images = fake_images
 
-            self.interp_embeddings = self.get_interp_embeddings(self.embeddings)
-            interp_c = self.sample_encoded_context(self.interp_embeddings)
+            interp_embeddings = self.get_interp_embeddings(self.embeddings)
+            interp_c = self.sample_encoded_context(interp_embeddings)
             interp_z = tf.random_normal([int(self.batch_size * 3 / 2), cfg.Z_DIM])
             self.log_vars.append(("hist_interp_c", interp_c))
             self.log_vars.append(("hist_interp_z", interp_z))
-            self.interp_fake_images = self.model.get_generator(tf.concat(1, [interp_c, interp_z]))
+            interp_fake_images = self.model.get_generator(tf.concat(1, [interp_c, interp_z]))
 
             # ####get discriminator_loss and generator_loss ###################
-            discriminator_loss = self.compute_d_loss()
-            generator_loss = self.compute_g_loss()
+            discriminator_loss = self.compute_d_loss(self.images,
+                                                     self.wrong_images,
+                                                     fake_images,
+                                                     self.embeddings)
+            generator_loss = self.compute_g_loss(interp_fake_images, interp_embeddings)
 
             # #######Total loss for build######################################
             self.log_vars.append(("g_loss", generator_loss))
@@ -119,14 +125,15 @@ class ConInfoGANTrainer(object):
 
         with pt.defaults_scope(phase=pt.Phase.test):
             with tf.variable_scope("model", reuse=True) as scope:
+                self.sampler()
                 self.visualization(cfg.TRAIN.NUM_COPY)
                 print("success")
 
     # ####get discriminator_loss and generator_loss for FG#####################
-    def compute_d_loss(self):
-        real_d = self.model.get_discriminator(self.images, self.embeddings)
-        wrong_d = self.model.get_discriminator(self.wrong_images, self.embeddings)
-        fake_d = self.model.get_discriminator(self.fake_images, self.embeddings)
+    def compute_d_loss(self, images, wrong_images, fake_images, embeddings):
+        real_d = self.model.get_discriminator(images, embeddings)
+        wrong_d = self.model.get_discriminator(wrong_images, embeddings)
+        fake_d = self.model.get_discriminator(fake_images, embeddings)
 
         real_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(real_d, tf.ones_like(real_d)))
         wrong_d_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(wrong_d, tf.zeros_like(wrong_d)))
@@ -138,8 +145,8 @@ class ConInfoGANTrainer(object):
         self.log_vars.append(("d_loss_fake", fake_d_loss))
         return discriminator_loss
 
-    def compute_g_loss(self):
-        interp_fake_g = self.model.get_discriminator(self.interp_fake_images, self.interp_embeddings)
+    def compute_g_loss(self, fake_images, embeddings):
+        interp_fake_g = self.model.get_discriminator(fake_images, embeddings)
 
         generator_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(interp_fake_g, tf.ones_like(interp_fake_g)))
         self.log_vars.append(("g_loss_interp_fake", generator_loss))
@@ -180,6 +187,11 @@ class ConInfoGANTrainer(object):
         self.d_sum = tf.merge_summary(all_sum['d'])
         self.hist_sum = tf.merge_summary(all_sum['hist'])
 
+    def sampler(self):
+        c = self.sample_encoded_context(self.embeddings)
+        z = tf.random_normal([self.batch_size, cfg.Z_DIM])
+        self.fake_images = self.model.get_generator(tf.concat(1, [c, z]))
+
     def visualize_one_superimage(self, img_var, images, rows, filename):
         stacked_img = []
         for row in range(rows):
@@ -196,11 +208,11 @@ class ConInfoGANTrainer(object):
     def visualization(self, n):
         c = self.sample_encoded_context(self.embeddings)
         z = tf.random_normal([self.batch_size, cfg.Z_DIM])
-        fake_x = self.model.get_generator(tf.concat(1, [c, z]))
-        fake_sum_train, superimage_train = self.visualize_one_superimage(fake_x[:n * n, :, :, :],
+        fake_images = self.model.get_generator(tf.concat(1, [c, z]))
+        fake_sum_train, superimage_train = self.visualize_one_superimage(fake_images[:n * n, :, :, :],
                                                                          self.images[:n * n, :, :, :],
                                                                          n, "train_on_text")
-        fake_sum_test, superimage_test = self.visualize_one_superimage(fake_x[n * n:2 * n * n, :, :, :],
+        fake_sum_test, superimage_test = self.visualize_one_superimage(fake_images[n * n:2 * n * n, :, :, :],
                                                                        self.images[n * n:2 * n * n, :, :, :],
                                                                        n, "test_on_text")
         self.superimages = tf.concat(0, [superimage_train, superimage_test])
@@ -251,21 +263,29 @@ class ConInfoGANTrainer(object):
 
         return img_summary
 
+    def build_model(self, sess):
+        self.init_opt()
+        sess.run(tf.initialize_all_variables())
+        if len(self.model_path) > 0:
+            print("Reading model parameters from %s" % self.model_path)
+            all_vars = tf.trainable_variables()
+            # restore_vars = [var for var in all_vars if
+            #                 var.name.startswith('g_') or
+            #                 var.name.startswith('d_')]
+            saver = tf.train.Saver(all_vars)
+            saver.restore(sess, self.model_path)
+            counter = self.model_path[self.model_path.rfind('_') + 1:self.model_path.rfind('.')]
+            counter = int(counter)
+        else:
+            print("Created model with fresh parameters.")
+            counter = 0
+        return counter
+
     def train(self):
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
             with tf.device("/gpu:%d" % cfg.GPU_ID):
-                self.init_opt()
-
+                counter = self.build_model(sess)
                 saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=2)
-                if len(self.model_path) > 0:
-                    print("Reading model parameters from %s" % self.model_path)
-                    saver.restore(sess, self.model_path)
-                    counter = self.model_path[self.model_path.rfind('_') + 1:self.model_path.rfind('.')]
-                    counter = int(counter)
-                else:
-                    print("Created model with fresh parameters.")
-                    sess.run(tf.initialize_all_variables())
-                    counter = 0
 
                 # summary_op = tf.merge_all_summaries()
                 summary_writer = tf.train.SummaryWriter(self.log_dir, sess.graph)
@@ -342,6 +362,62 @@ class ConInfoGANTrainer(object):
                     if np.any(np.isnan(avg_log_vals)):
                         raise ValueError("NaN detected!")
 
+    def save_images(self, image_batchs, filenames, epoch, imtype='samples'):
+        for i in range(len(image_batchs)):  # 10 embeddings for each images
+            for j in range(len(filenames)):  # batch_size samples for each embedding
+                s_tmp = '%s/%s/%s' % (self.log_dir, imtype, filenames[j])
+                folder = s_tmp[:s_tmp.rfind('/')]
+                if not os.path.isdir(folder):
+                    print('Make a new folder: ', folder)
+                    mkdir_p(folder)
+                fullpath = '%s_epoch%d_%d.jpg' % (s_tmp, epoch, i)
+                # from [-1.0, 1.0] to [0, 255]
+                img = (image_batchs[i][j] + 1.0) * 127.5
+                img = img.astype('uint8')
+                scipy.misc.imsave(fullpath, img)
+
+    def save_super_images(self, images, sample_batchs, filenames, epoch, imtype='samples'):
+        for j in range(len(filenames)):  # batch_size samples for each embedding
+            s_tmp = '%s/%s/%s' % (self.log_dir, imtype, filenames[j])
+            folder = s_tmp[:s_tmp.rfind('/')]
+            if not os.path.isdir(folder):
+                print('Make a new folder: ', folder)
+                mkdir_p(folder)
+            superimage = [images[j]]
+            for i in range(len(sample_batchs)):  # 10 embeddings for each images
+                superimage.append(sample_batchs[i][j])
+
+            superimage = np.concatenate(superimage, axis=1)
+            fullpath = '%s_epoch%d.jpg' % (s_tmp, epoch)
+            scipy.misc.imsave(fullpath, superimage)
+
+    def save_for_inception_score(self, eval_dataset, subset='train'):
+        with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+            with tf.device("/gpu:%d" % cfg.GPU_ID):
+                if len(self.model_path) > 0:
+                    self.build_model(sess)
+                    #
+                    count = 0
+                    print('num_examples:', eval_dataset._num_examples)
+                    while count < eval_dataset._num_examples:
+                        start = count % eval_dataset._num_examples
+                        epoch = int(count / eval_dataset._num_examples)
+                        images, embeddings_batchs, filenames = eval_dataset.next_batch_test(self.batch_size, start)
+                        print('count = ', count, 'start = ', start)
+                        # print('len(embeddings_batchs)', len(embeddings_batchs), embeddings_batchs[0].shape)
+                        samples_batchs = []
+                        for i in range(len(embeddings_batchs)):
+                            samples = sess.run(self.fake_images, {self.embeddings: embeddings_batchs[i]})
+                            samples_batchs.append(samples)
+
+                        self.save_images([images], filenames, epoch, imtype=subset + '/real_images')
+                        self.save_images(samples_batchs, filenames, epoch, imtype=subset + '/samples')
+                        self.save_super_images(images, samples_batchs, filenames, epoch, imtype=subset + '/1real_10samples')
+
+                        count += self.batch_size
+                else:
+                    print("Input a valid model path.")
+    '''
     def save_batch_images(self, real_images, gen_samples, captions, counter, nrows=4):
         numImgs = real_images.shape[0]
         ncols = int(numImgs / nrows)
@@ -390,3 +466,4 @@ class ConInfoGANTrainer(object):
                         counter += 1
                 else:
                     print("Input a valid model path.")
+    '''
