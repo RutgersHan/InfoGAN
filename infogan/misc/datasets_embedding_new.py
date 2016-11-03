@@ -29,7 +29,7 @@ class Dataset(object):
         self._aug_flag = aug_flag
         self._class_id = np.array(class_id)
         self._class_range = class_range
-        self._default_size = 64
+        self._default_size = 128
         self._perm = None
 
     @property
@@ -197,8 +197,8 @@ class Dataset(object):
 
 class TextDataset(object):
     def __init__(self, workdir):
-        self.image_shape = [64, 64, 3]
-        self.image_dim = 64 * 64 * 3
+        self.image_shape = [128, 128, 3]
+        self.image_dim = 128 * 128 * 3
         self.embedding_shape = [1024]
         self.train = None
         self.test = None
@@ -207,13 +207,13 @@ class TextDataset(object):
     def get_data(self, pickle_path, aug_flag=True):
         # with open(pickle_path + '/64images.pickle', 'rb') as f:
         if aug_flag:
-            with open(pickle_path + '/76images.pickle', 'rb') as f:
+            with open(pickle_path + '/152images.pickle', 'rb') as f:
                 images = pickle.load(f)
                 array_images = np.array([image for image in images])
                 print('array_images: ', array_images.shape)
 
         else:
-            with open(pickle_path + '/64images.pickle', 'rb') as f:
+            with open(pickle_path + '/128images.pickle', 'rb') as f:
                 images = pickle.load(f)
                 array_images = np.array([image for image in images])
                 print('array_images: ', array_images.shape)

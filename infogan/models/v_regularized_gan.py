@@ -19,7 +19,8 @@ class ConRegularizedGAN(object):
 
         self.image_shape = image_shape
         self.s = image_shape[0]
-        self.s2, self.s4, self.s8, self.s16 = int(self.s / 2), int(self.s / 4), int(self.s / 8), int(self.s / 16)
+        self.s2, self.s4, self.s8, self.s16, self.s32 = \
+            int(self.s / 2), int(self.s / 4), int(self.s / 8), int(self.s / 16), int(self.s / 32)
         if cfg.GAN.NETWORK_TYPE == "default":
             with tf.variable_scope("g_net"):
                 self.g_context_template = self.context_embedding()
@@ -45,9 +46,9 @@ class ConRegularizedGAN(object):
     def generator(self):
         node1_0 = \
             (pt.template("input").
-             custom_fully_connected(self.s16 * self.s16 * self.gf_dim * 8).
+             custom_fully_connected(self.s32 * self.s32 * self.gf_dim * 8).
              fc_batch_norm().
-             reshape([-1, self.s16, self.s16, self.gf_dim * 8]))
+             reshape([-1, self.s32, self.s32, self.gf_dim * 8]))
         node1_1 = \
             (node1_0.
              custom_conv2d(self.gf_dim * 2, k_h=1, k_w=1, d_h=1, d_w=1).
@@ -65,7 +66,7 @@ class ConRegularizedGAN(object):
 
         node2_0 = \
             (node1.
-             custom_deconv2d([0, self.s8, self.s8, self.gf_dim * 4], k_h=4, k_w=4).
+             custom_deconv2d([0, self.s16, self.s16, self.gf_dim * 4], k_h=4, k_w=4).
              conv_batch_norm())
         node2_1 = \
             (node2_0.
@@ -84,6 +85,9 @@ class ConRegularizedGAN(object):
 
         template = \
             (node2.
+             custom_deconv2d([0, self.s8, self.s8, self.gf_dim * 2], k_h=4, k_w=4).
+             conv_batch_norm().
+             apply(tf.nn.relu).
              custom_deconv2d([0, self.s4, self.s4, self.gf_dim * 2], k_h=4, k_w=4).
              conv_batch_norm().
              apply(tf.nn.relu).
@@ -108,21 +112,26 @@ class ConRegularizedGAN(object):
              custom_conv2d(self.df_dim * 4, k_h=4, k_w=4).
              conv_batch_norm().
              custom_conv2d(self.df_dim * 8, k_h=4, k_w=4).
+             conv_batch_norm().
+             custom_conv2d(self.df_dim * 16, k_h=4, k_w=4).
              conv_batch_norm())
         node1_1 = \
             (node1_0.
-             custom_conv2d(self.df_dim * 2, k_h=1, k_w=1, d_h=1, d_w=1).
+             custom_conv2d(self.df_dim * 4, k_h=1, k_w=1, d_h=1, d_w=1).
              conv_batch_norm().
              apply(leaky_rectify, leakiness=0.2).
-             custom_conv2d(self.df_dim * 2, k_h=3, k_w=3, d_h=1, d_w=1).
+             custom_conv2d(self.df_dim * 4, k_h=3, k_w=3, d_h=1, d_w=1).
              conv_batch_norm().
              apply(leaky_rectify, leakiness=0.2).
-             custom_conv2d(self.df_dim * 8, k_h=3, k_w=3, d_h=1, d_w=1).
+             custom_conv2d(self.df_dim * 16, k_h=3, k_w=3, d_h=1, d_w=1).
              conv_batch_norm())
 
         node1 = \
             (node1_0.
              apply(tf.add, node1_1).
+             apply(leaky_rectify, leakiness=0.2).
+             custom_conv2d(self.df_dim * 8, k_h=3, k_w=3, d_h=1, d_w=1).
+             conv_batch_norm().
              apply(leaky_rectify, leakiness=0.2))
 
         return node1
