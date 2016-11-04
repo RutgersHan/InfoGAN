@@ -11,6 +11,8 @@ import os
 import sys
 from six.moves import range
 from progressbar import ETA, Bar, Percentage, ProgressBar
+from os import listdir
+from os.path import join
 
 from infogan.misc.config import cfg
 from infogan.misc.utils import mkdir_p
@@ -362,23 +364,24 @@ class ConInfoGANTrainer(object):
                     if np.any(np.isnan(avg_log_vals)):
                         raise ValueError("NaN detected!")
 
-    def save_images(self, image_batchs, filenames, epoch, imtype='samples'):
+    def save_images(self, image_batchs, filenames, epoch, save_dir, imtype='samples'):
         for i in range(len(image_batchs)):  # 10 embeddings for each images
+            images = image_batchs[i]
             for j in range(len(filenames)):  # batch_size samples for each embedding
-                s_tmp = '%s/%s/%s' % (self.log_dir, imtype, filenames[j])
+                s_tmp = '%s/%s/%s' % (save_dir, imtype, filenames[j])
                 folder = s_tmp[:s_tmp.rfind('/')]
                 if not os.path.isdir(folder):
                     print('Make a new folder: ', folder)
                     mkdir_p(folder)
                 fullpath = '%s_epoch%d_%d.jpg' % (s_tmp, epoch, i)
                 # from [-1.0, 1.0] to [0, 255]
-                img = (image_batchs[i][j] + 1.0) * 127.5
+                img = (images[j] + 1.0) * 127.5
                 img = img.astype('uint8')
                 scipy.misc.imsave(fullpath, img)
 
-    def save_super_images(self, images, sample_batchs, filenames, epoch, imtype='samples'):
+    def save_super_images(self, images, sample_batchs, filenames, epoch, save_dir, imtype='samples'):
         for j in range(len(filenames)):  # batch_size samples for each embedding
-            s_tmp = '%s/%s/%s' % (self.log_dir, imtype, filenames[j])
+            s_tmp = '%s/%s/%s' % (save_dir, filenames[j])
             folder = s_tmp[:s_tmp.rfind('/')]
             if not os.path.isdir(folder):
                 print('Make a new folder: ', folder)
@@ -391,79 +394,58 @@ class ConInfoGANTrainer(object):
             fullpath = '%s_epoch%d.jpg' % (s_tmp, epoch)
             scipy.misc.imsave(fullpath, superimage)
 
-    def save_for_inception_score(self, eval_dataset, subset='train'):
+    def eval_one_dataset(self, sess, dataset, save_dir, subset='train', flag=False):
+        count = 0
+        print('num_examples:', dataset._num_examples)
+        while count < dataset._num_examples:
+            start = count % dataset._num_examples
+            epoch = int(count / dataset._num_examples)
+            images, embeddings_batchs, filenames = dataset.next_batch_test(self.batch_size, start)
+            print('count = ', count, 'start = ', start)
+            # print('len(embeddings_batchs)', len(embeddings_batchs), embeddings_batchs[0].shape)
+            samples_batchs = []
+            for i in range(len(embeddings_batchs)):
+                samples = sess.run(self.fake_images,
+                                   {self.embeddings: embeddings_batchs[i]})
+                samples_batchs.append(samples)
+
+            self.save_images(samples_batchs, filenames, epoch, save_dir, imtype='samples/' + subset)
+            if flag:
+                # self.save_images([images], filenames, epoch, save_dir, imtype='real_images/' + subset)
+                self.save_super_images(images, samples_batchs,
+                                       filenames, epoch, save_dir, imtype='real_10samples/' + subset)
+
+            count += self.batch_size
+
+    def save_for_inception_score(self):
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
             with tf.device("/gpu:%d" % cfg.GPU_ID):
                 if len(self.model_path) > 0:
-                    self.build_model(sess)
-                    #
-                    count = 0
-                    print('num_examples:', eval_dataset._num_examples)
-                    while count < eval_dataset._num_examples:
-                        start = count % eval_dataset._num_examples
-                        epoch = int(count / eval_dataset._num_examples)
-                        images, embeddings_batchs, filenames = eval_dataset.next_batch_test(self.batch_size, start)
-                        print('count = ', count, 'start = ', start)
-                        # print('len(embeddings_batchs)', len(embeddings_batchs), embeddings_batchs[0].shape)
-                        samples_batchs = []
-                        for i in range(len(embeddings_batchs)):
-                            samples = sess.run(self.fake_images, {self.embeddings: embeddings_batchs[i]})
-                            samples_batchs.append(samples)
+                    self.init_opt()
+                    sess.run(tf.initialize_all_variables())
+                    if self.model_path.find('.ckpt') != -1:
+                        print("Reading model parameters from %s" % self.model_path)
+                        saver = tf.train.Saver(tf.trainable_variables())
+                        saver.restore(sess, self.model_path)
 
-                        self.save_images([images], filenames, epoch, imtype=subset + '/real_images')
-                        self.save_images(samples_batchs, filenames, epoch, imtype=subset + '/samples')
-                        self.save_super_images(images, samples_batchs, filenames, epoch, imtype=subset + '/1real_10samples')
+                        self.eval_one_dataset(sess, self.dataset.train, self.log_dir, subset='train', flag=True)
+                        self.eval_one_dataset(sess, self.dataset.test, self.log_dir, subset='valid', flag=True)
+                    else:
+                        model_files = listdir(self.model_path)
+                        for f in model_files:
+                            model_fullpath = join(self.model_path, f)
+                            if model_fullpath.find('.ckpt') == -1 or\
+                               model_fullpath.find('.ckpt.meta') != -1:
+                                # print('****Invalid path: ', model_files[i])
+                                continue
 
-                        count += self.batch_size
+                            print("Reading model parameters from %s" % model_fullpath)
+                            saver = tf.train.Saver(tf.trainable_variables())
+                            saver.restore(sess, model_fullpath)
+
+                            save_dir = model_fullpath[:model_fullpath.find('.ckpt')]
+                            self.eval_one_dataset(sess, self.dataset.train, save_dir, subset='train')
+                            self.eval_one_dataset(sess, self.dataset.test, save_dir, subset='valid')
+                            print(model_fullpath)
                 else:
                     print("Input a valid model path.")
-    '''
-    def save_batch_images(self, real_images, gen_samples, captions, counter, nrows=4):
-        numImgs = real_images.shape[0]
-        ncols = int(numImgs / nrows)
-        # print('real_images.shape: ', real_images.shape,
-        #       'gen_samples.shape: ', gen_samples.shape)
-        # print('numImgs: ', numImgs,
-        #       'nrows: ', nrows, 'ncols:', ncols)
-        stacked_img = []
-        for i in range(nrows):
-            row_images = []
-            row_samples = []
-            for j in range(ncols):
-                img = real_images[i * ncols + j]
-                row_images.append(img)
-                sample = gen_samples[i * ncols + j]
-                row_samples.append(sample)
-            stacked_img.append(np.concatenate(row_images, axis=1))
-            stacked_img.append(np.concatenate(row_samples, axis=1))
-            stacked_img.append(-1.0 * np.ones([10, img.shape[1] * ncols, 3]))
-        superimage = np.concatenate(stacked_img, axis=0)
-
-        # save images generated for train and test captions
-        scipy.misc.imsave('%s/batch_%d.jpg' % (self.log_dir, counter), superimage)
-        pfi = open('%s/batch_%d.txt' % (self.log_dir, counter), "w")
-        for i in range(numImgs):
-            pfi.write('\n***row %d***\n' % i)
-            pfi.write(captions[i])
-        pfi.close()
-        print('save to: %s/batch_%d' % (self.log_dir, counter))
-
-    def test(self):
-        with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-            with tf.device("/gpu:%d" % cfg.GPU_ID):
-                self.init_opt()
-
-                saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=2)
-                if len(self.model_path) > 0:
-                    print("Reading model parameters from %s" % self.model_path)
-                    saver.restore(sess, self.model_path)
-                    counter = 0
-                    print('_epochs_completed:', self.dataset.test._epochs_completed)
-                    while self.dataset.test._epochs_completed < 1:
-                        images, _, embeddings, captions, _ = self.dataset.test.next_batch(self.batch_size, 1)
-                        gen_samples = sess.run(self.fake_images, {self.embeddings: embeddings})
-                        self.save_batch_images(images, gen_samples, captions, counter)
-                        counter += 1
-                else:
-                    print("Input a valid model path.")
-    '''

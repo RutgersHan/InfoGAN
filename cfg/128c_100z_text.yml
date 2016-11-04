@@ -6,12 +6,15 @@ GPU_ID: 0
 Z_DIM: 100
 
 TRAIN:
+    # FLAG: True
+    #
     FLAG: False
+    PRETRAINED_MODEL: './ckt_logs/custom_crop_LR/dev1019'  # /model_82000.ckpt'
+
     BATCH_SIZE: 64
     NUM_COPY: 4
     MAX_EPOCH: 600
     SNAPSHOT_INTERVAL: 1000
-    PRETRAINED_MODEL: './ckt_logs/custom_crop_LR/dev1019/model_82000.ckpt'
     DISCRIMINATOR_LR: 0.0002
     GENERATOR_LR: 0.0002
 

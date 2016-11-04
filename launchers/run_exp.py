@@ -53,10 +53,10 @@ if __name__ == "__main__":
     dataset.train = dataset.get_data(filename_train)
     if cfg.TRAIN.FLAG:
         ckt_logs_dir = "ckt_logs/%s/%s_%s" % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
+        mkdir_p(ckt_logs_dir)
     else:
         s_tmp = cfg.TRAIN.PRETRAINED_MODEL
         ckt_logs_dir = s_tmp[:s_tmp.find('.ckpt')]
-    mkdir_p(ckt_logs_dir)
 
     model = ConRegularizedGAN(
         image_shape=dataset.image_shape
@@ -71,6 +71,5 @@ if __name__ == "__main__":
     if cfg.TRAIN.FLAG:
         algo.train()
     else:
-        algo.save_for_inception_score(dataset.train, subset='train')
-        algo.save_for_inception_score(dataset.test, subset='valid')
+        algo.save_for_inception_score()
         # algo.test()
